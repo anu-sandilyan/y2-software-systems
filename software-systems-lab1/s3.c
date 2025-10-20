@@ -45,6 +45,8 @@ void parse_command(char line[], char *args[], int *argsc)
 ///Launch related functions
 void child(char *args[], int argsc)
 {
+        char *argv[] = {"wc", "text1.txt", NULL};
+        execvp("wc", argv);
     ///Implement this function:
 
     ///Use execvp to load the binary 
@@ -55,7 +57,17 @@ void child(char *args[], int argsc)
 void launch_program(char *args[], int argsc)
 {
     ///Implement this function:
-
+    int rc = fork();
+    if (rc < 0) {
+        fprintf(stderr, "fork failed :(\n");
+        exit(1);
+    } else if (rc == 0){
+        printf("child initiated: pid = %d\n", getpid());
+        child(args, argsc);
+    } else {
+        int wc = wait(NULL);
+        printf("process in parent function");
+    }
     ///fork() a child process.
     ///In the child part of the code,
     ///call child(args, argv)
