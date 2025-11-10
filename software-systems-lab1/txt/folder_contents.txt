@@ -1,0 +1,12 @@
+.:
+compile.sh
+s3
+s3.c
+s3.h
+smain.c
+txt
+
+./txt:
+folder_contents.txt
+phrases.txt
+phrases.txt:Zone.Identifier

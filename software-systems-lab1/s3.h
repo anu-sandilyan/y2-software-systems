@@ -38,10 +38,13 @@ static inline void reap()
 void read_command_line(char line[]);
 void construct_shell_prompt(char shell_prompt[]);
 void parse_command(char line[], char *args[], int *argsc);
+int command_with_redirection(char line[]);
+void catch_fd_errors(int fd);
 
 ///Child functions (add more as appropriate)
 void child(char *args[], int argsc);
 
 ///Program launching functions (add more as appropriate)
 void launch_program(char *args[], int argsc);
+void launch_program_with_redirection(char *args[], int argsc);
 #endif
