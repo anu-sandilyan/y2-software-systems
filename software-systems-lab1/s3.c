@@ -3,7 +3,14 @@
 ///Simple for now, but will be expanded in a following section
 void construct_shell_prompt(char shell_prompt[])
 {
-    strcpy(shell_prompt, "[s3]$ ");
+    char cwd_buffer[MAX_PROMPT_LEN - 10]; //getcwb() requires a size buffer
+    if (getcwd(cwd_buffer, sizeof(cwd_buffer)) != NULL) {
+        snprintf(shell_prompt, MAX_PROMPT_LEN, "%s[s3]$ ", cwd_buffer); //snprintf prevents buffer overflow
+    } else {
+        // original prompt if cwd fails
+        perror("error: getcwd failed");
+        strcpy(shell_prompt, "[s3]$ ");
+    }
 }
 
 ///Prints a shell prompt and reads input from the user
@@ -60,28 +67,21 @@ int command_with_redirection(char line[]){ //check if redirection operators are 
     }
 }
 
+void cd(char *args[], int argsc){ //cd function 
+    if(argsc < 2){ //if no arg, cd to home
+        chdir(getenv("HOME")); 
+    } else {// normal case
+        chdir(args[1]);
+        if(chdir(args[1]) != 0) {  //error handling
+            perror("error: cd failed: invalid file or directory path");
+        }
+    }
+}
+
 void catch_fd_errors(int fd){ //handle file opening errors
     if(fd < 0){
         perror("error: file permission denied\n");
         exit(1);
-    }
-}
-
-void child_with_redirection (int fd, char *redirect_op, char *redirect_file){
-    if(strcmp(redirect_op, ">" )== 0){
-        fd = open(redirect_file, O_WRONLY | O_CREAT | O_TRUNC, 0664); //open w write permissions, create if non-existent, truncate (overwrite)
-        catch_fd_errors(fd);
-        dup2(fd, STDOUT_FILENO); //redirect std output to fd
-    } 
-    else if(strcmp(redirect_op, ">>" )== 0){
-        fd = open(redirect_file, O_WRONLY | O_CREAT | O_APPEND, 0664); //append instead of overwrite
-        catch_fd_errors(fd);
-        dup2(fd, STDOUT_FILENO); 
-    }
-    else if(strcmp(redirect_op, "<") == 0){
-        fd = open(redirect_file, O_RDONLY); //write permissions not needed
-        catch_fd_errors(fd);
-        dup2(fd, STDIN_FILENO); //redirect std input to fd this time
     }
 }
 

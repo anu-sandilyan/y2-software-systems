@@ -43,6 +43,7 @@ void catch_fd_errors(int fd);
 
 ///Child functions (add more as appropriate)
 void child(char *args[], int argsc);
+void cd(char *args[], int argsc);
 
 ///Program launching functions (add more as appropriate)
 void launch_program(char *args[], int argsc);

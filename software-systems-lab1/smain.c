@@ -16,10 +16,15 @@ int main(int argc, char *argv[]){
 
         read_command_line(line); 
         
+        
         if(command_with_redirection(line) == 1){ //Command with redirection
            parse_command(line, args, &argsc);
            launch_program_with_redirection(args, argsc);
            reap();
+       } else if (strcmp(args[0], "cd") == 0) {
+            parse_command(line, args, &argsc);  
+            cd(args, argsc); //
+            reap(); 
        }
        else { //Basic command 
            parse_command(line, args, &argsc);
@@ -27,8 +32,6 @@ int main(int argc, char *argv[]){
            reap();
        }
        
-    }
-
-    return 0;
-    
+    return 0;   
+}
 }
