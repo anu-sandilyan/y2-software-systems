@@ -59,19 +59,11 @@ void child(char *args[], int argsc)
         exit(1);
 }
 
-int command_with_redirection(char line[]){ //check if redirection operators are present
-    if (strstr(line, ">") != NULL || strstr(line, "<") != NULL) { 
-        return 1;
-    } else {
-        return 0;
-    }
-}
 
 void cd(char *args[], int argsc){ //cd function 
     if(argsc < 2){ //if no arg, cd to home
         chdir(getenv("HOME")); 
     } else {// normal case
-        chdir(args[1]);
         if(chdir(args[1]) != 0) {  //error handling
             perror("error: cd failed: invalid file or directory path");
         }
@@ -90,12 +82,6 @@ void launch_program_with_redirection(char *args[], int argsc){
     char *redirect_op = NULL; //input or output operator
     char *redirect_file = NULL; //filename
     int op_index = -1; //operator index in arguments
-
-    if (argsc > 0 && strcmp(args[0], "exit") == 0)
-    {
-        printf("exiting shell.\n"); //must exit before forking
-        exit(0);
-    } 
 
     for (int i = 0; i < argsc; i++){
         if(strcmp(args[i], ">") == 0 || strcmp(args[i], ">>") == 0 || strcmp(args[i], "<") == 0){
@@ -153,11 +139,6 @@ void launch_program_with_redirection(char *args[], int argsc){
 
 void launch_program(char *args[], int argsc)
 {
-    if (argsc > 0 && strcmp(args[0], "exit") == 0)
-    {
-        printf("exiting shell.\n"); //must exit before forking
-        exit(0);
-     } 
 
     int rc = fork();
     if (rc < 0) {
