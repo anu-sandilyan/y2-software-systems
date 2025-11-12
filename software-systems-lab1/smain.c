@@ -12,22 +12,31 @@ int main(int argc, char *argv[]){
 
     ///Stores the number of arguments
     int argsc;
+    //stores exit, command, redirect flags
+    bool exit_cmd; 
+    bool cd_cmd;
+    bool redirect_cmd;
 
     while (1) {
-
+        //parsing alters line, so redirect check is done beforehand
         read_command_line(line);
-        strcpy(line_copy, line); // parse modifies line, so must make a copy for strcmp
-        parse_command(line, args, &argsc); //change parse to top of loop 
+        redirect_cmd = is_redirect(line);
+
+        parse_command(line, args, &argsc);
+        exit_cmd = is_exit(args);
+        cd_cmd = is_cd(args);
         
-        if (argsc == 0) { //no input
+        //empty input handling
+        if (argsc == 0) { 
             continue;
-        } else if (strcmp(args[0], "exit") == 0) { // exit command
+        }  
+        else if (exit_cmd) { 
             printf("exiting shell...\n");
             exit(0);
-        } else if (strcmp(args[0], "cd") == 0) { //cd function
+        } else if (cd_cmd) {
             cd(args, argsc); 
             reap(); 
-        } else if(strstr(line, ">") != NULL || strstr(line_copy, "<") != NULL){ //Command with redirection
+        } else if(redirect_cmd) { 
            launch_program_with_redirection(args, argsc);
            reap();
        }

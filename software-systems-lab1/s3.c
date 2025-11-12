@@ -49,6 +49,34 @@ void parse_command(char line[], char *args[], int *argsc)
     args[*argsc] = NULL; ///args must be null terminated
 }
 
+bool is_exit(char *args[]){
+    if(strcmp(args[0], "exit") == 0){
+        return true;
+    } 
+    else {
+        return false;
+        }
+}
+
+bool is_cd(char *args[]){
+    if(strcmp(args[0], "cd") == 0){
+        return true;
+    } 
+    else {
+        return false;
+        }
+}
+
+bool is_redirect(char line[]){
+    if(strstr(line, ">") != NULL || strstr(line, "<") != NULL){
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
+
 ///Launch related functions
 void child(char *args[], int argsc)
 {

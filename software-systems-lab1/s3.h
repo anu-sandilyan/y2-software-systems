@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/types.h>
@@ -38,7 +39,12 @@ static inline void reap()
 void read_command_line(char line[]);
 void construct_shell_prompt(char shell_prompt[]);
 void parse_command(char line[], char *args[], int *argsc);
-//int command_with_redirection(char line[]);
+
+//flags for exit, cd and redirect
+bool is_exit(char *args[]);
+bool is_cd(char *args[]);
+bool is_redirect(char line[]);
+
 void catch_fd_errors(int fd);
 
 ///Child functions (add more as appropriate)
