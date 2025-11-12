@@ -3,11 +3,12 @@
 ///Simple for now, but will be expanded in a following section
 void construct_shell_prompt(char shell_prompt[])
 {
-    char cwd_buffer[MAX_PROMPT_LEN - 10]; //getcwb() requires a size buffer
+    // make buffer: getcwb() requires a size buffer to prevent overflow
+    char cwd_buffer[MAX_PROMPT_LEN - 10];
     if (getcwd(cwd_buffer, sizeof(cwd_buffer)) != NULL) {
-        snprintf(shell_prompt, MAX_PROMPT_LEN, "%s[s3]$ ", cwd_buffer); //snprintf prevents buffer overflow
+        snprintf(shell_prompt, MAX_PROMPT_LEN, "%s[s3]$ ", cwd_buffer);
     } else {
-        // original prompt if cwd fails
+        // default prompt if cwd fails
         perror("error: getcwd failed");
         strcpy(shell_prompt, "[s3]$ ");
     }
@@ -45,8 +46,8 @@ void parse_command(char line[], char *args[], int *argsc)
         args[(*argsc)++] = token;
         token = strtok(NULL, " ");
     }
-    
-    args[*argsc] = NULL; ///args must be null terminated
+    ///args must be null terminated
+    args[*argsc] = NULL; 
 }
 
 bool is_exit(char *args[]){
@@ -67,14 +68,27 @@ bool is_cd(char *args[]){
         }
 }
 
-bool is_redirect(char line[]){
-    if(strstr(line, ">") != NULL || strstr(line, "<") != NULL){
-        return true;
-    }
-    else {
-        return false;
-    }
+bool is_redirect(char *args[], int argsc){
+    if(argsc > 0){
+        for(int i = 0; i < argsc; i++){
+            if(strcmp(args[i], ">>") == 0 || strcmp(args[i], ">") == 0 || strcmp(args[i], "<") == 0){
+                return true;
+            }
+        } 
+    } 
+    return false;
 }
+
+/* bool is_pipeline(char *args[], int argsc){
+    if(argsc > 0){
+        for(int i = 0; i <argsc; i++){
+            if(strcmp(args[i], "|") == 0){
+                return true;
+            }
+        }
+    }
+    return false;
+} */
 
 
 ///Launch related functions
@@ -104,6 +118,7 @@ void catch_fd_errors(int fd){ //handle file opening errors
         exit(1);
     }
 }
+
 
 void launch_program_with_redirection(char *args[], int argsc){ 
     

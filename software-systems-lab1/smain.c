@@ -12,31 +12,24 @@ int main(int argc, char *argv[]){
 
     ///Stores the number of arguments
     int argsc;
-    //stores exit, command, redirect flags
-    bool exit_cmd; 
-    bool cd_cmd;
-    bool redirect_cmd;
 
     while (1) {
         //parsing alters line, so redirect check is done beforehand
         read_command_line(line);
-        redirect_cmd = is_redirect(line);
-
         parse_command(line, args, &argsc);
-        exit_cmd = is_exit(args);
-        cd_cmd = is_cd(args);
-        
+
         //empty input handling
         if (argsc == 0) { 
             continue;
         }  
-        else if (exit_cmd) { 
+        else if (is_exit(args)) { 
             printf("exiting shell...\n");
             exit(0);
-        } else if (cd_cmd) {
+        } else if (is_cd(args)) {
             cd(args, argsc); 
             reap(); 
-        } else if(redirect_cmd) { 
+        } 
+        else if(is_redirect(args, argsc)) { 
            launch_program_with_redirection(args, argsc);
            reap();
        }

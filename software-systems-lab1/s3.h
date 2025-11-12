@@ -43,7 +43,7 @@ void parse_command(char line[], char *args[], int *argsc);
 //flags for exit, cd and redirect
 bool is_exit(char *args[]);
 bool is_cd(char *args[]);
-bool is_redirect(char line[]);
+bool is_redirect(char *args[], int argsc);
 
 void catch_fd_errors(int fd);
 
