@@ -3,12 +3,12 @@
 ///Simple for now, but will be expanded in a following section
 void construct_shell_prompt(char shell_prompt[])
 {
-    // make buffer: getcwb() requires a size buffer to prevent overflow
+    //  cwd_buffer: getcwd() requires a size buffer to prevent overflow
     char cwd_buffer[MAX_PROMPT_LEN - 10];
     if (getcwd(cwd_buffer, sizeof(cwd_buffer)) != NULL) {
         snprintf(shell_prompt, MAX_PROMPT_LEN, "%s[s3]$ ", cwd_buffer);
     } else {
-        // default prompt if cwd fails
+        // default prompt if getcwd fails
         perror("error: getcwd failed");
         strcpy(shell_prompt, "[s3]$ ");
     }
@@ -50,7 +50,22 @@ void parse_command(char line[], char *args[], int *argsc)
     args[*argsc] = NULL; 
 }
 
-bool is_exit(char *args[]){
+void split_pipeline(char line[], char *commands[], int *commandsc)
+{
+    ///splits user input into  sperate commands, delimited by "|" character
+    char *token = strtok(line, "|");
+    *commandsc = 0;
+    while (token != NULL && *commandsc < MAX_ARGS - 1)
+    {
+        commands[(*commandsc)++] = token;
+        token = strtok(NULL, "|");
+    }
+    ///args must be null terminated
+    commands[*commandsc] = NULL; 
+}
+
+bool is_exit(char *args[])
+{
     if(strcmp(args[0], "exit") == 0){
         return true;
     } 
@@ -59,7 +74,8 @@ bool is_exit(char *args[]){
         }
 }
 
-bool is_cd(char *args[]){
+bool is_cd(char *args[])
+{
     if(strcmp(args[0], "cd") == 0){
         return true;
     } 
@@ -68,7 +84,8 @@ bool is_cd(char *args[]){
         }
 }
 
-bool is_redirect(char *args[], int argsc){
+bool is_redirect(char *args[], int argsc)
+{
     if(argsc > 0){
         for(int i = 0; i < argsc; i++){
             if(strcmp(args[i], ">>") == 0 || strcmp(args[i], ">") == 0 || strcmp(args[i], "<") == 0){
@@ -79,17 +96,13 @@ bool is_redirect(char *args[], int argsc){
     return false;
 }
 
-/* bool is_pipeline(char *args[], int argsc){
-    if(argsc > 0){
-        for(int i = 0; i <argsc; i++){
-            if(strcmp(args[i], "|") == 0){
-                return true;
-            }
-        }
+bool is_pipeline(char line[])
+{
+    if(strstr(line, "|") != NULL){
+        return true;
     }
     return false;
-} */
-
+} 
 
 ///Launch related functions
 void child(char *args[], int argsc)
@@ -102,7 +115,8 @@ void child(char *args[], int argsc)
 }
 
 
-void cd(char *args[], int argsc){ //cd function 
+void cd(char *args[], int argsc)
+{ //cd function 
     if(argsc < 2){ //if no arg, cd to home
         chdir(getenv("HOME")); 
     } else {// normal case
@@ -112,15 +126,16 @@ void cd(char *args[], int argsc){ //cd function
     }
 }
 
-void catch_fd_errors(int fd){ //handle file opening errors
+void catch_fd_errors(int fd)
+{ //handle file opening errors
     if(fd < 0){
         perror("error: file permission denied\n");
         exit(1);
     }
 }
 
-
-void launch_program_with_redirection(char *args[], int argsc){ 
+void launch_program_with_redirection(char *args[], int argsc)
+{ 
     
     char *redirect_op = NULL; //input or output operator
     char *redirect_file = NULL; //filename
@@ -141,7 +156,8 @@ void launch_program_with_redirection(char *args[], int argsc){
         } 
     }
 
-    if (op_index == -1 || redirect_file == NULL) { //error handling
+    if (op_index == -1 || redirect_file == NULL) 
+    { //error handling
          fprintf(stderr, "error: invalid redirection syntax\n");
          return;
     }
@@ -199,3 +215,4 @@ void launch_program(char *args[], int argsc)
     ///In the child part of the code,
     ///call child(args, argv)
 }
+

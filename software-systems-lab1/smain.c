@@ -14,7 +14,6 @@ int main(int argc, char *argv[]){
     int argsc;
 
     while (1) {
-        //parsing alters line, so redirect check is done beforehand
         read_command_line(line);
         parse_command(line, args, &argsc);
 

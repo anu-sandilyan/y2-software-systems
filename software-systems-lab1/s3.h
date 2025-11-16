@@ -39,8 +39,10 @@ static inline void reap()
 void read_command_line(char line[]);
 void construct_shell_prompt(char shell_prompt[]);
 void parse_command(char line[], char *args[], int *argsc);
+void split_pipeline(char line[], char *commands[], int *commandsc)
 
 //flags for exit, cd and redirect
+bool is_pipeline(char line[])
 bool is_exit(char *args[]);
 bool is_cd(char *args[]);
 bool is_redirect(char *args[], int argsc);
