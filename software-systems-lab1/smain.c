@@ -15,6 +15,18 @@ int main(int argc, char *argv[]){
 
     while (1) {
         read_command_line(line);
+        if(is_pipeline(line)){
+            char *commands[MAX_ARGS];
+            int commandsc = 0;
+            split_pipeline(line, commands, &commandsc);
+            if(commandsc == 0){
+                continue;
+            } 
+            else {
+            exec_pipeline(commands, &commandsc);
+            }
+        continue;
+        }
         parse_command(line, args, &argsc);
 
         //empty input handling

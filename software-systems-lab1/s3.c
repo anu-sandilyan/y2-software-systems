@@ -64,6 +64,72 @@ void split_pipeline(char line[], char *commands[], int *commandsc)
     commands[*commandsc] = NULL; 
 }
 
+void exec_pipeline(char *commands[], int *commandsc) {
+
+    //initialise pipe with 2 descriptors (read and write)
+    int prev_pipe_read = -1; 
+    int pd[2]; //
+
+    //loop to process pipeline for each command
+    for (int i = 0; i < *commandsc; i++) {
+        if (i < *commandsc - 1) { //do not create another pipe for last command
+            if (pipe(pd) < 0) {
+                perror("pipe failed");
+                exit(1);
+            }
+        }
+        //create child process for each command
+        int rc = fork();
+        if (rc < 0) {
+            perror("fork failed");
+            exit(1);
+        } else if (rc == 0) {
+            //child process
+            if (prev_pipe_read != -1) {
+                dup2(prev_pipe_read, STDIN_FILENO); //wire read end of pipe to input
+                close(prev_pipe_read);
+            }
+            if (i < *commandsc - 1) {
+                dup2(pd[1], STDOUT_FILENO); //wire write end of pipe to output
+                close(pd[1]); // close pipe
+                close(pd[0]);
+            }
+
+            char *args[MAX_ARGS];
+            int argsc;
+            parse_command(commands[i], args, &argsc);
+
+            if (argsc == 0) {
+                exit(0);
+            }
+
+            if (is_redirect(args, argsc)) {
+                launch_program_with_redirection(args, argsc);
+                exit(0); // Child must exit
+            } else {
+                execvp(args[0], args); // (slide 23)
+                perror("execvp failed");
+                exit(1);
+            }
+        } 
+
+        // --- PARENT PROCESS ---
+        // Close parent's copy of pipe FDs (slide 20, 23)
+        if (prev_pipe_read != -1) {
+            close(prev_pipe_read);
+        }
+        if (i < *commandsc - 1) {
+            prev_pipe_read = pd[0]; // Save read end for next child
+            close(pd[1]); // Parent closes write end
+        }
+    }
+
+    // 4. Wait for all children to complete (slide 23, 24)
+    for (int i = 0; i < *commandsc; i++) {
+        wait(NULL);
+    }
+}
+
 bool is_exit(char *args[])
 {
     if(strcmp(args[0], "exit") == 0){
