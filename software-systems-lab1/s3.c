@@ -14,7 +14,7 @@ void construct_shell_prompt(char shell_prompt[])
     }
 }
 
-///Prints a shell prompt and reads input from the user
+//Prints a shell prompt and reads input from the user
 void read_command_line(char line[])
 {
     char shell_prompt[MAX_PROMPT_LEN];
@@ -31,6 +31,8 @@ void read_command_line(char line[])
     line[strlen(line) - 1] = '\0';
 }
 
+/*potential extension: add support for  \n and input strings in quotations?
+ currently doesn't work as this function only checks space as a delimiter*/
 void parse_command(char line[], char *args[], int *argsc)
 {
     ///Implements simple tokenization (space delimited)
@@ -52,7 +54,7 @@ void parse_command(char line[], char *args[], int *argsc)
 
 void split_pipeline(char line[], char *commands[], int *commandsc)
 {
-    ///splits user input into  sperate commands, delimited by "|" character
+    ///splits user input into seperate commands, delimited by "|" character
     char *token = strtok(line, "|");
     *commandsc = 0;
     while (token != NULL && *commandsc < MAX_ARGS - 1)
@@ -62,6 +64,20 @@ void split_pipeline(char line[], char *commands[], int *commandsc)
     }
     ///args must be null terminated
     commands[*commandsc] = NULL; 
+}
+
+void split_batch(char line[], char *sub_lines[], int *sub_linesc)
+{
+    ///splits user input into  seperate inputs, delimited by ";" character
+    char *token = strtok(line, ";");
+    *sub_linesc = 0;
+    while (token != NULL && *sub_linesc < MAX_ARGS - 1)
+    {
+        sub_lines[(*sub_linesc)++] = token;
+        token = strtok(NULL, ";");
+    }
+    ///args must be null terminated
+    sub_lines[*sub_linesc] = NULL; 
 }
 
 void exec_pipeline(char *commands[], int *commandsc) {
@@ -214,6 +230,14 @@ bool is_pipeline(char line[])
     return false;
 } 
 
+bool is_batch(char line[])
+{
+    if(strstr(line, ";") != NULL){
+        return true;
+    }
+    return false;
+} 
+
 ///Launch related functions
 void child(char *args[], int argsc)
 {
@@ -224,7 +248,7 @@ void child(char *args[], int argsc)
         exit(1);
 }
 
-
+//TO DO: add functionality for special cd commands (e.g. ~, -)
 void cd(char *args[], int argsc)
 { //cd function 
     if(argsc < 2){ //if no arg, cd to home
@@ -280,4 +304,3 @@ void launch_program(char *args[], int argsc)
     ///In the child part of the code,
     ///call child(args, argv)
 }
-
