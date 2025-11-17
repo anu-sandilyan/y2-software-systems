@@ -25,29 +25,30 @@ int main(int argc, char *argv[]){
             else {
             exec_pipeline(commands, &commandsc);
             }
-        continue;
+        } else 
+        {
+            parse_command(line, args, &argsc);
+            //empty input handling
+            if (argsc == 0) 
+            { 
+                continue;
+            }  
+            else if (is_exit(args)) 
+            { 
+                printf("exiting shell...\n");
+                exit(0);
+            } else if (is_cd(args)) 
+            {
+                cd(args, argsc); 
+            } 
+            else if(is_redirect(args, argsc)) 
+            { 
+            launch_program_with_redirection(args, argsc);
+            }
+            else { //Basic command 
+                launch_program(args, argsc);
         }
-        parse_command(line, args, &argsc);
-
-        //empty input handling
-        if (argsc == 0) { 
-            continue;
-        }  
-        else if (is_exit(args)) { 
-            printf("exiting shell...\n");
-            exit(0);
-        } else if (is_cd(args)) {
-            cd(args, argsc); 
-            reap(); 
-        } 
-        else if(is_redirect(args, argsc)) { 
-           launch_program_with_redirection(args, argsc);
-           reap();
-       }
-       else { //Basic command 
-           launch_program(args, argsc);
-           reap();
-       }
+        }
        
     }
     return 0;

@@ -91,7 +91,7 @@ void exec_pipeline(char *commands[], int *commandsc) {
             }
             if (i < *commandsc - 1) {
                 dup2(pd[1], STDOUT_FILENO); //wire write end of pipe to output
-                close(pd[1]); // close pipe
+                close(pd[1]); // close child copy of pipe
                 close(pd[0]);
             }
 
@@ -104,30 +104,74 @@ void exec_pipeline(char *commands[], int *commandsc) {
             }
 
             if (is_redirect(args, argsc)) {
-                launch_program_with_redirection(args, argsc);
-                exit(0); // Child must exit
-            } else {
-                execvp(args[0], args); // (slide 23)
-                perror("execvp failed");
-                exit(1);
-            }
+                exec_redirect(args, argsc);
+            } 
+            execvp(args[0], args); // (slide 23)
+            perror("execvp failed");
+            exit(1);
         } 
-
-        // --- PARENT PROCESS ---
-        // Close parent's copy of pipe FDs (slide 20, 23)
+        // close parent copy of pipe
         if (prev_pipe_read != -1) {
             close(prev_pipe_read);
         }
         if (i < *commandsc - 1) {
-            prev_pipe_read = pd[0]; // Save read end for next child
-            close(pd[1]); // Parent closes write end
+            prev_pipe_read = pd[0];
+            close(pd[1]); 
         }
     }
 
-    // 4. Wait for all children to complete (slide 23, 24)
     for (int i = 0; i < *commandsc; i++) {
         wait(NULL);
     }
+}
+
+void exec_redirect(char *args[], int argsc)
+{
+    char *redirect_op = NULL; //input or output operator
+    char *redirect_file = NULL; //filename
+    int op_index = -1; //operator index in arguments
+
+    for (int i = 0; i < argsc; i++){
+        if(strcmp(args[i], ">") == 0 || strcmp(args[i], ">>") == 0 || strcmp(args[i], "<") == 0){
+            redirect_op = args[i];
+            op_index = i;
+
+            if (i + 1 < argsc) {
+                redirect_file = args[i + 1]; //file name should be next argument after operator
+            } else {
+                fprintf(stderr, "error: invalid redirection syntax: no filename provided\n");
+                exit(1); //return to shell
+            }
+            break;
+        } 
+    }
+
+    if (op_index == -1 || redirect_file == NULL) 
+    { //error handling
+         fprintf(stderr, "error: invalid redirection syntax\n");
+         exit(1);
+    }
+
+        int fd;
+        //implement redirection
+        if(strcmp(redirect_op, ">" )== 0){
+            fd = open(redirect_file, O_WRONLY | O_CREAT | O_TRUNC, 0664); //open w write permissions, create if non-existent, truncate (overwrite)
+            catch_fd_errors(fd);
+            dup2(fd, STDOUT_FILENO); //redirect std output to fd
+        } 
+        else if(strcmp(redirect_op, ">>" )== 0){
+            fd = open(redirect_file, O_WRONLY | O_CREAT | O_APPEND, 0664); //append instead of overwrite
+            catch_fd_errors(fd);
+            dup2(fd, STDOUT_FILENO); 
+        }
+        else if(strcmp(redirect_op, "<") == 0){
+            fd = open(redirect_file, O_RDONLY); //write permissions not needed
+            catch_fd_errors(fd);
+            dup2(fd, STDIN_FILENO); //redirect std input to fd this time
+        }
+        close(fd); //cleanup
+        args[op_index] = NULL; //program can't automatically process redirect operators
+    
 }
 
 bool is_exit(char *args[])
@@ -202,57 +246,13 @@ void catch_fd_errors(int fd)
 
 void launch_program_with_redirection(char *args[], int argsc)
 { 
-    
-    char *redirect_op = NULL; //input or output operator
-    char *redirect_file = NULL; //filename
-    int op_index = -1; //operator index in arguments
-
-    for (int i = 0; i < argsc; i++){
-        if(strcmp(args[i], ">") == 0 || strcmp(args[i], ">>") == 0 || strcmp(args[i], "<") == 0){
-            redirect_op = args[i];
-            op_index = i;
-
-            if (i + 1 < argsc) {
-                redirect_file = args[i + 1]; //file name should be next argument after operator
-            } else {
-                fprintf(stderr, "error: invalid redirection syntax: no filename provided\n");
-                return; //return to shell
-            }
-            break;
-        } 
-    }
-
-    if (op_index == -1 || redirect_file == NULL) 
-    { //error handling
-         fprintf(stderr, "error: invalid redirection syntax\n");
-         return;
-    }
-
         int rc = fork();
         if (rc < 0) {
             fprintf(stderr, "fork failed :(\n");
             exit(1);
         } else if (rc == 0){
             printf("child initiated: pid = %d\n", getpid());
-            int fd;
-            //implement redirection
-            if(strcmp(redirect_op, ">" )== 0){
-                fd = open(redirect_file, O_WRONLY | O_CREAT | O_TRUNC, 0664); //open w write permissions, create if non-existent, truncate (overwrite)
-                catch_fd_errors(fd);
-                dup2(fd, STDOUT_FILENO); //redirect std output to fd
-            } 
-            else if(strcmp(redirect_op, ">>" )== 0){
-                fd = open(redirect_file, O_WRONLY | O_CREAT | O_APPEND, 0664); //append instead of overwrite
-                catch_fd_errors(fd);
-                dup2(fd, STDOUT_FILENO); 
-            }
-            else if(strcmp(redirect_op, "<") == 0){
-                fd = open(redirect_file, O_RDONLY); //write permissions not needed
-                catch_fd_errors(fd);
-                dup2(fd, STDIN_FILENO); //redirect std input to fd this time
-            }
-            close(fd); //cleanup
-            args[op_index] = NULL; //program can't automatically process redirect operators
+            exec_redirect(args, argsc);
             child(args, argsc);
         } else {
             int wstatus;
@@ -264,7 +264,6 @@ void launch_program_with_redirection(char *args[], int argsc)
 
 void launch_program(char *args[], int argsc)
 {
-
     int rc = fork();
     if (rc < 0) {
         fprintf(stderr, "fork failed :(\n");
