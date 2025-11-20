@@ -40,7 +40,7 @@ void read_command_line(char line[]);
 void construct_shell_prompt(char shell_prompt[]);
 void parse_command(char line[], char *args[], int *argsc);
 void exec_redirect(char *args[], int argsc);
-void split_batch(char line[], char *commands[], int *commandsc);
+void split_batch(char line[], char *sub_lines[], int *sub_linesc);
 void split_pipeline(char line[], char *commands[], int *commandsc);
 void exec_pipeline(char *commands[], int *commandsc);
 

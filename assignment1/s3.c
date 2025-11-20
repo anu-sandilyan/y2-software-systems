@@ -251,11 +251,53 @@ void child(char *args[], int argsc)
 //TO DO: add functionality for special cd commands (e.g. ~, -)
 void cd(char *args[], int argsc)
 { //cd function 
-    if(argsc < 2){ //if no arg, cd to home
+    static char old_pwd[MAX_PROMPT_LEN] = "";
+    //save old_pwd as current working directory before cd
+    char current_pwd[MAX_PROMPT_LEN];
+    if (getcwd(current_pwd, sizeof(current_pwd)) == NULL) {
+        perror("error: getcwd failed");
+        return; 
+    }
+
+    //in the shell, "cd -" prints the directory
+    char *new_dir = NULL;
+    bool print_new_dir = false;
+
+    if(argsc < 2) { //if no arg, cd to home
+        new_dir = getenv("HOME");
         chdir(getenv("HOME")); 
-    } else {// normal case
-        if(chdir(args[1]) != 0) {  //error handling
-            perror("error: cd failed: invalid file or directory path");
+    } else if (strcmp(args[1], "~") == 0) {
+        new_dir = getenv("HOME");
+    } else if(strcmp(args[1], "-" == 0)){
+        if (old_pwd[0] == '\0') {
+            fprintf(stderr, "error: cd failed: OLDPWD not set\n");
+            return;
+        }
+        new_dir = old_pwd;
+        print_new_dir = true;
+    } 
+    else { // normal case
+        new_dir = args[1];
+    } //error handling
+    if (new_dir == NULL) {
+         perror("error: cd failed: invalid destination");
+         return;
+    }
+    if(chdir(args[1]) != 0) {  //error handling
+        perror("error: cd failed: invalid file or directory path");
+    }
+    if (chdir(destination) != 0) {
+        perror("error: cd failed: invalid file or directory path");
+    } else {
+        //update old_pwd if cd is sucessful
+        strcpy(old_pwd, current_pwd);
+        
+        // print new directory if user input "cd -"
+        if (print_new_dir) {
+            char new_pwd[MAX_LINE];
+            if (getcwd(new_pwd, sizeof(new_pwd)) != NULL) {
+                printf("%s\n", new_pwd);
+            }
         }
     }
 }
