@@ -6,7 +6,8 @@
 #include <pthread.h>    // for threads
 #include <string.h>     // for strcspn, strcmp
 
-#define CLIENT_PORT 10000
+//port = 0 -> assigns any free port
+#define CLIENT_PORT 0
 
 //moved code in main to be handled by read and write threads
 void *sender_thread(void *arg) {
@@ -65,16 +66,16 @@ void *listener_thread(void *arg) {
 // client code
 int main(int argc, char *argv[])
 {
-    int user_port = CLIENT_PORT;
+    int client_port = CLIENT_PORT;
     if (argc > 1) {
-    user_port = atoi(argv[1]);
+    client_port = atoi(argv[1]);
     }
 
     // This function opens a UDP socket,
     // binding it to all IP interfaces of this machine,
     // and dynamic port number user_port.
     // (See details of the function in udp.h)
-    int sd = udp_socket_open(user_port);
+    int sd = udp_socket_open(client_port);
 
     // initialise sender + listener threads w ids
     pthread_t send_tid, listen_tid;
