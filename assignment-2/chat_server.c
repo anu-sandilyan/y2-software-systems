@@ -2,12 +2,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include "udp.h"
 
 //initialise linked list for clients
 typedef struct ClientNode {
     struct sockaddr_in client_addr;
-    char name[32]; // field for names
+    // attribute fields
+    char name[32]; 
+    char client_ip[INET_ADDRSTRLEN]; 
+    int client_port;
     struct ClientNode *next;
 } ClientNode;
 ClientNode *head = NULL;
@@ -15,6 +19,10 @@ ClientNode *head = NULL;
 void add_client(struct sockaddr_in addr, char *name) {
     ClientNode *new_node = malloc(sizeof(ClientNode));
     new_node->client_addr = addr;
+    new_node->client_port = ntohs(addr.sin_port);
+
+    // 2. Store the IP as a string
+    inet_ntop(AF_INET, &(addr.sin_addr), new_node->client_ip, INET_ADDRSTRLEN);
     //copy client name into the list
     strncpy(new_node->name, name, 31);
     new_node->name[31] = '\0';
@@ -26,14 +34,9 @@ void add_client(struct sockaddr_in addr, char *name) {
 void connect_client(int sd, struct sockaddr_in *sender, char *name) {
     //add connecting client
     add_client(*sender, name);
-    // convert client ip address to string, and port to int
-    char client_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(sender->sin_addr), client_ip, INET_ADDRSTRLEN); 
-    int client_port = ntohs(sender->sin_port);
-
     // print user details to server terminal
     printf("user '%s' added to active clients: ", name);
-    printf("connected from IP: %s, port: %d\n", client_ip, client_port);
+    printf("connected from IP: %s, port: %d\n", head->client_ip, head->client_port);
 
     // send response only to client who just connected
     char response[BUFFER_SIZE];
@@ -42,6 +45,7 @@ void connect_client(int sd, struct sockaddr_in *sender, char *name) {
 }
 
 void disconnect_client(int sd, struct sockaddr_in *sender) {
+    int sender_port = ntohs(sender->sin_port);
     //start at top of client list
     ClientNode *current = head;
     ClientNode *prev = NULL;
@@ -49,7 +53,7 @@ void disconnect_client(int sd, struct sockaddr_in *sender) {
     //find disconnecting client in list
     while (current != NULL) {
         // client port should match
-        if (current->client_addr.sin_port == sender->sin_port) {
+        if (current->client_port == sender_port) {
             if (prev == NULL) {
                 head = current->next;
             } else {
@@ -67,6 +71,54 @@ void disconnect_client(int sd, struct sockaddr_in *sender) {
         prev = current;
         current = current->next;
     }
+}
+
+void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
+    // check if admin is sending the kick request
+    int sender_port = ntohs(sender->sin_port);
+    if (sender_port != 6666) {
+        printf("unauthorized permissions to kick user: attempt from port %d\n", sender_port);
+        char error_msg[] = "error: only the server admin (port 6666) can kick users.";
+        udp_socket_write(sd, sender, error_msg, sizeof(error_msg));
+        return;
+    }
+
+    // if admin, find target user to kick
+    ClientNode *current = head;
+    while (current != NULL) {
+
+        if (strcmp(current->name, target_name) == 0) {
+            //show to admin
+            char admin_msg[BUFFER_SIZE];
+            snprintf(admin_msg, BUFFER_SIZE, "success: %s has been removed.", target_name);
+            udp_socket_write(sd, sender, admin_msg, BUFFER_SIZE);
+
+            //notify target that they have been kicked
+            char kick_msg[] = "you have been removed from the chat.";
+            udp_socket_write(sd, &current->client_addr, kick_msg, sizeof(kick_msg));
+            
+            // notify everyone else (except admin and target)
+            char global_msg[BUFFER_SIZE];
+            snprintf(global_msg, BUFFER_SIZE, "%s has been removed from the chat", target_name);
+
+            ClientNode *client = head;
+            while (client != NULL) {
+                if (client != current && ntohs(client->client_addr.sin_port) != 6666) {
+                    udp_socket_write(sd, &client->client_addr, global_msg, BUFFER_SIZE);
+                }
+                client = client->next;
+            }
+
+            disconnect_client(sd, &current->client_addr);      
+            return;
+        }
+        current = current->next;
+    }
+
+    // if target not found
+    char not_found[BUFFER_SIZE];
+    snprintf(not_found, BUFFER_SIZE, "error: user '%s' not found.", target_name);
+    udp_socket_write(sd, sender, not_found, BUFFER_SIZE);
 }
 
 void parse_request(char *client_request, int sd, struct sockaddr_in *client_address){
@@ -90,10 +142,15 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         if (strcmp(command, "conn") == 0) 
         {
             connect_client(sd, client_address, message);
-        } else if (strcmp(command, "disconn") == 0)
+        } 
+        else if (strcmp(command, "disconn") == 0)
         {
             disconnect_client(sd, client_address);
-        } else
+        } 
+        else if (strcmp(command, "kick") == 0){
+            kick_client(sd, client_address, message);
+        } 
+        else
         {
             printf("unknown command: %s \n", command);
             char error_msg[BUFFER_SIZE];
