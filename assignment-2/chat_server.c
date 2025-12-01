@@ -31,6 +31,17 @@ void add_client(struct sockaddr_in addr, char *name) {
     head = new_node;
 }
 
+const char* find_sender(struct sockaddr_in *sender) {
+    // Find sender name
+    for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
+        if (cur->client_addr.sin_addr.s_addr == sender->sin_addr.s_addr &&
+            cur->client_addr.sin_port == sender->sin_port) {
+            return cur->name;
+        }
+    }
+    return "unknown";
+}
+
 void connect_client(int sd, struct sockaddr_in *sender, char *name) {
     //add connecting client
     add_client(*sender, name);
@@ -121,6 +132,53 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
     udp_socket_write(sd, sender, not_found, BUFFER_SIZE);
 }
 
+void say_client(int sd, struct sockaddr_in *sender, char *message) {
+    
+    const char *from = find_sender(sender);
+
+    char global_msg[BUFFER_SIZE];
+    int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
+    if (n < 0) return;
+    size_t resp_len = (size_t)n;
+
+    for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
+        udp_socket_write(sd, &cur->client_addr, global_msg, (int)resp_len);
+    }   
+}
+
+void sayto_client(int sd, struct sockaddr_in *sender, char *sendtoandmessage ) {
+
+    size_t idx = strcspn(sendtoandmessage, " ");
+    if (sendtoandmessage[idx] == ' ') {
+        sendtoandmessage[idx] = '\0';
+        const char *sendto = sendtoandmessage;
+        const char *message = sendtoandmessage + idx + 1;
+        //while (*rest == ' ') rest++; // skip extra spaces
+
+    const char *from = find_sender(sender);
+
+    char global_msg[BUFFER_SIZE];
+    int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
+    if (n < 0) return;
+    size_t resp_len = (size_t)n;
+
+
+    ClientNode *client = head;
+    while (client != NULL) {
+        if ( strcmp(client->name, sendto) == 0 || strcmp(client->name, from) == 0 ) { //|| client == from) {
+            udp_socket_write(sd, &client->client_addr, global_msg, (int)resp_len);
+        }
+        client = client->next;
+    }
+
+
+
+    //for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
+      //  udp_socket_write(sd, &cur->client_addr, global_msg, (int)resp_len);
+    //}
+}
+}
+
 void parse_request(char *client_request, int sd, struct sockaddr_in *client_address){
         //split string into command + message, with $ delimiter
     char *delimiter = strchr(client_request, '$');
@@ -147,9 +205,18 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         {
             disconnect_client(sd, client_address);
         } 
-        else if (strcmp(command, "kick") == 0){
+        else if (strcmp(command, "kick") == 0)
+        {
             kick_client(sd, client_address, message);
         } 
+        else if (strcmp(command, "say") == 0)
+        {
+            say_client(sd, client_address, message);
+        } 
+        else if (strcmp(command, "sayto") == 0)
+        {
+            sayto_client(sd, client_address, message);
+        }    
         else
         {
             printf("unknown command: %s \n", command);
