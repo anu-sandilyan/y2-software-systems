@@ -31,15 +31,18 @@ void add_client(struct sockaddr_in addr, char *name) {
     head = new_node;
 }
 
-const char* find_sender(struct sockaddr_in *sender) {
-    // Find sender name
+const char* find_client(struct sockaddr_in *sender) {
+    //convert port + ip to human readable format, to compare w client attributes
+    int sender_port = ntohs(sender->sin_port);
+    char sender_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(sender->sin_addr), sender_ip, INET_ADDRSTRLEN);
+    // find client name
     for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
-        if (cur->client_addr.sin_addr.s_addr == sender->sin_addr.s_addr &&
-            cur->client_addr.sin_port == sender->sin_port) {
+        if (cur->client_port == sender_port && strcmp(cur->client_ip, sender_ip) == 0) {
             return cur->name;
         }
     }
-    return "unknown";
+    return "unknown error: client not found";
 }
 
 void connect_client(int sd, struct sockaddr_in *sender, char *name) {
@@ -85,7 +88,6 @@ void disconnect_client(int sd, struct sockaddr_in *sender) {
 }
 
 void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
-    // check if admin is sending the kick request
     int sender_port = ntohs(sender->sin_port);
     if (sender_port != 6666) {
         printf("unauthorized permissions to kick user: attempt from port %d\n", sender_port);
@@ -93,9 +95,13 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
         udp_socket_write(sd, sender, error_msg, sizeof(error_msg));
         return;
     }
+    // check if admin is sending the kick request
+    const char *admin_name = find_client(sender);
+    printf("admin '%s' (Port 6666) is kicking user '%s'\n", admin_name, target_name);
 
     // if admin, find target user to kick
     ClientNode *current = head;
+    ClientNode *prev = NULL;
     while (current != NULL) {
 
         if (strcmp(current->name, target_name) == 0) {
@@ -110,7 +116,7 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
             
             // notify everyone else (except admin and target)
             char global_msg[BUFFER_SIZE];
-            snprintf(global_msg, BUFFER_SIZE, "%s has been removed from the chat", target_name);
+            snprintf(global_msg, BUFFER_SIZE, "%s has been removed from the chat.", target_name);
 
             ClientNode *client = head;
             while (client != NULL) {
@@ -119,8 +125,16 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
                 }
                 client = client->next;
             }
+            
+            // Unlink the node from the list
+            if (prev == NULL) {
+                head = current->next; //removing head
+            } else {
+                prev->next = current->next; //removing from middle/end
+            }
 
-            disconnect_client(sd, &current->client_addr);      
+            printf("Admin kicked user '%s'.\n", current->name);
+            free(current);
             return;
         }
         current = current->next;
@@ -132,9 +146,38 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
     udp_socket_write(sd, sender, not_found, BUFFER_SIZE);
 }
 
+void rename_client(int sd, struct sockaddr_in *sender, char *new_name) {
+    int sender_port = ntohs(sender->sin_port);
+    char sender_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(sender->sin_addr), sender_ip, INET_ADDRSTRLEN);
+
+    ClientNode *current = head;
+
+    // find client
+    while (current != NULL) {
+        // match by Port AND IP
+        if (current->client_port == sender_port && strcmp(current->client_ip, sender_ip) == 0) { 
+            printf("user '%s' has changed name to '%s'\n", current->name, new_name);
+
+            strncpy(current->name, new_name, 31);
+            current->name[31] = '\0'; // ensure it is a valid string
+
+            char response[BUFFER_SIZE];
+            snprintf(response, BUFFER_SIZE, "you are now known as %s.", current->name);
+            udp_socket_write(sd, sender, response, BUFFER_SIZE);
+            return;
+        }
+        current = current->next;
+    }
+
+    // if user not found
+    char error_msg[] = "error: user name not found.";
+    udp_socket_write(sd, sender, error_msg, sizeof(error_msg));
+}
+
 void say_client(int sd, struct sockaddr_in *sender, char *message) {
     
-    const char *from = find_sender(sender);
+    const char *from = find_client(sender);
 
     char global_msg[BUFFER_SIZE];
     int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
@@ -146,37 +189,36 @@ void say_client(int sd, struct sockaddr_in *sender, char *message) {
     }   
 }
 
-void sayto_client(int sd, struct sockaddr_in *sender, char *sendtoandmessage ) {
+void sayto_client(int sd, struct sockaddr_in *sender, char *nameandmessage ) {
 
-    size_t idx = strcspn(sendtoandmessage, " ");
-    if (sendtoandmessage[idx] == ' ') {
-        sendtoandmessage[idx] = '\0';
-        const char *sendto = sendtoandmessage;
-        const char *message = sendtoandmessage + idx + 1;
-        //while (*rest == ' ') rest++; // skip extra spaces
+    size_t idx = strcspn(nameandmessage, " ");
 
-    const char *from = find_sender(sender);
-
-    char global_msg[BUFFER_SIZE];
-    int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
-    if (n < 0) return;
-    size_t resp_len = (size_t)n;
-
-
-    ClientNode *client = head;
-    while (client != NULL) {
-        if ( strcmp(client->name, sendto) == 0 || strcmp(client->name, from) == 0 ) { //|| client == from) {
-            udp_socket_write(sd, &client->client_addr, global_msg, (int)resp_len);
-        }
-        client = client->next;
+    if (nameandmessage[idx] != ' ') {
+        char err[] = "error: format command as 'sayto$ Name Message'";
+        udp_socket_write(sd, sender, err, sizeof(err));
+        return;
     }
+    else {
+        nameandmessage[idx] = '\0';
+        const char *target_name = nameandmessage;
+        const char *message = nameandmessage + idx + 1;
+
+        const char *sender_name = find_client(sender);
+
+        char global_msg[BUFFER_SIZE];
+        int n = snprintf(global_msg, sizeof(global_msg), "%s (private): %s", sender_name, message);
+        if (n < 0) return;
+        size_t resp_len = (size_t)n;
 
 
-
-    //for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
-      //  udp_socket_write(sd, &cur->client_addr, global_msg, (int)resp_len);
-    //}
-}
+        ClientNode *current = head;
+        while (current != NULL) {
+        if (strcmp(current->name, target_name) == 0 || strcmp(current->name, sender_name) == 0) {
+            udp_socket_write(sd, &current->client_addr, global_msg, (int)resp_len);
+        }
+            current = current->next;
+        }
+    }
 }
 
 void parse_request(char *client_request, int sd, struct sockaddr_in *client_address){
@@ -198,7 +240,7 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         }
         //command logic goes here
         if (strcmp(command, "conn") == 0) 
-        {
+{
             connect_client(sd, client_address, message);
         } 
         else if (strcmp(command, "disconn") == 0)
@@ -209,6 +251,10 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         {
             kick_client(sd, client_address, message);
         } 
+        else if (strcmp(command, "rename") == 0) 
+        {
+            rename_client(sd, client_address, message);
+        }
         else if (strcmp(command, "say") == 0)
         {
             say_client(sd, client_address, message);
