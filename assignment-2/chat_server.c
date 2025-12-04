@@ -1,10 +1,12 @@
-
+#define _XOPEN_SOURCE 700
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <pthread.h>
 #include "udp.h"
 
+pthread_rwlock_t lock = PTHREAD_RWLOCK_INITIALIZER;
 //initialise linked list for clients
 typedef struct ClientNode {
     struct sockaddr_in client_addr;
@@ -26,9 +28,10 @@ void add_client(struct sockaddr_in addr, char *name) {
     //copy client name into the list
     strncpy(new_node->name, name, 31);
     new_node->name[31] = '\0';
-
+    pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
     new_node->next = head;
     head = new_node;
+    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
 }
 
 const char* find_client(struct sockaddr_in *sender) {
@@ -37,11 +40,14 @@ const char* find_client(struct sockaddr_in *sender) {
     char sender_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(sender->sin_addr), sender_ip, INET_ADDRSTRLEN);
     // find client name
+    pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
     for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
         if (cur->client_port == sender_port && strcmp(cur->client_ip, sender_ip) == 0) {
+            pthread_rwlock_unlock(&lock); //CRITICAL SECTION - reading global list (lock)
             return cur->name;
         }
     }
+    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
     return "unknown error: client not found";
 }
 
@@ -61,8 +67,9 @@ void connect_client(int sd, struct sockaddr_in *sender, char *name) {
 void disconnect_client(int sd, struct sockaddr_in *sender) {
     int sender_port = ntohs(sender->sin_port);
     //start at top of client list
+    pthread_rwlock_wrlock(&lock); // CRITICAL SECTION - writing to global list (lock)
     ClientNode *current = head;
-    ClientNode *prev = NULL;
+    ClientNode *prev = NULL; 
 
     //find disconnecting client in list
     while (current != NULL) {
@@ -79,12 +86,15 @@ void disconnect_client(int sd, struct sockaddr_in *sender) {
             udp_socket_write(sd, sender, response, sizeof(response));
             // delete current node
             free(current);
+            pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
             return;
         }   
         //move pointer to next node
         prev = current;
         current = current->next;
+
     }
+    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
 }
 
 void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
@@ -100,6 +110,7 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
     printf("admin '%s' (Port 6666) is kicking user '%s'\n", admin_name, target_name);
 
     // if admin, find target user to kick
+    pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
     ClientNode *current = head;
     ClientNode *prev = NULL;
     while (current != NULL) {
@@ -133,8 +144,9 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
                 prev->next = current->next; //removing from middle/end
             }
 
-            printf("Admin kicked user '%s'.\n", current->name);
+            printf("admin kicked user '%s'.\n", current->name);
             free(current);
+            pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
             return;
         }
         current = current->next;
@@ -144,11 +156,14 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
     char not_found[BUFFER_SIZE];
     snprintf(not_found, BUFFER_SIZE, "error: user '%s' not found.", target_name);
     udp_socket_write(sd, sender, not_found, BUFFER_SIZE);
+    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+
 }
 
 void rename_client(int sd, struct sockaddr_in *sender, char *new_name) {
     int sender_port = ntohs(sender->sin_port);
     char sender_ip[INET_ADDRSTRLEN];
+    pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
     inet_ntop(AF_INET, &(sender->sin_addr), sender_ip, INET_ADDRSTRLEN);
 
     ClientNode *current = head;
@@ -161,9 +176,9 @@ void rename_client(int sd, struct sockaddr_in *sender, char *new_name) {
 
             strncpy(current->name, new_name, 31);
             current->name[31] = '\0'; // ensure it is a valid string
-
             char response[BUFFER_SIZE];
             snprintf(response, BUFFER_SIZE, "you are now known as %s.", current->name);
+            pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
             udp_socket_write(sd, sender, response, BUFFER_SIZE);
             return;
         }
@@ -171,6 +186,7 @@ void rename_client(int sd, struct sockaddr_in *sender, char *new_name) {
     }
 
     // if user not found
+    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
     char error_msg[] = "error: user name not found.";
     udp_socket_write(sd, sender, error_msg, sizeof(error_msg));
 }
@@ -183,10 +199,11 @@ void say_client(int sd, struct sockaddr_in *sender, char *message) {
     int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
     if (n < 0) return;
     size_t resp_len = (size_t)n;
-
+    pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
     for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
         udp_socket_write(sd, &cur->client_addr, global_msg, (int)resp_len);
     }   
+    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
 }
 
 void sayto_client(int sd, struct sockaddr_in *sender, char *nameandmessage ) {
@@ -210,7 +227,7 @@ void sayto_client(int sd, struct sockaddr_in *sender, char *nameandmessage ) {
         if (n < 0) return;
         size_t resp_len = (size_t)n;
 
-
+        pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
         ClientNode *current = head;
         while (current != NULL) {
         if (strcmp(current->name, target_name) == 0 || strcmp(current->name, sender_name) == 0) {
@@ -218,6 +235,8 @@ void sayto_client(int sd, struct sockaddr_in *sender, char *nameandmessage ) {
         }
             current = current->next;
         }
+        pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+
     }
 }
 
@@ -274,6 +293,21 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
     { 
         printf("invalid message format: use 'command$ message\n");
     }
+}
+
+//data structure to store arguments to pass to thread (client address, socket descriptor, request message)
+typedef struct {
+    int sd;
+    struct sockaddr_in client_addr;
+    char request[BUFFER_SIZE];
+} ThreadArgs;
+
+//function for multithreading
+void *handle_request_thread(void *arg) {
+    ThreadArgs *args = (ThreadArgs *)arg;
+    parse_request(args->request, args->sd, &args->client_addr);
+    free(args);
+    return NULL;
 }
 
 int main(int argc, char *argv[])
