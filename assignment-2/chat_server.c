@@ -343,7 +343,24 @@ int main(int argc, char *argv[])
             } else {
                 client_request[BUFFER_SIZE - 1] = '\0';
             }
-            parse_request(client_request, sd, &client_address);
+            //create new thread
+            pthread_t tid;
+            ThreadArgs *args = malloc(sizeof(ThreadArgs));
+            if (args == NULL) {
+                perror("error: failed to allocate memory for thread arguments");
+                continue;
+            }
+            args->sd = sd;
+            args->client_addr = client_address;
+            strncpy(args->request, client_request, BUFFER_SIZE);
+
+            if (pthread_create(&tid, NULL, handle_request_thread, args) != 0) {
+                perror("thread create failed");
+                free(args);
+            } else {
+                pthread_detach(tid); // clean up thread resources
+            }
+
 
             // This function writes back to the incoming client,
             // whose address is now available in client_address, 
