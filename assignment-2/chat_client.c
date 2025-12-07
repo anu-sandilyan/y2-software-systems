@@ -42,7 +42,7 @@ void *sender_thread(void *arg) {
         // through the socket at sd.
         // (See details of the function in udp.h)
         udp_socket_write(sd, &server_addr, client_request, BUFFER_SIZE);
-        if (strcmp(client_request, "exit") == 0) {
+        if (strcmp(client_request, "exit$") == 0) {
             break; // exit program fully
         }
         pthread_mutex_lock(&screen_mutex);
@@ -86,10 +86,10 @@ void *listener_thread(void *arg) {
 }
 
 void setup_screen() {
-    initscr();            
-    cbreak();             // Disable line buffering (pass characters immediately)
-    echo();               // Show typed characters
-    keypad(stdscr, TRUE); // Enable function keys
+    initscr();          
+    cbreak();             // disable line buffering (pass characters immediately)
+    echo();               // show typed characters
+    keypad(stdscr, TRUE); // enable function keys
 
     int height, width;
     getmaxyx(stdscr, height, width);
@@ -97,18 +97,22 @@ void setup_screen() {
     int input_height = 3;
     int chat_height = height - input_height;
 
-    // Create windows: newwin(rows, cols, start_y, start_x)
+    // create 2 windows
     chat_window = newwin(chat_height, width, 0, 0);
     input_window = newwin(input_height, width, chat_height, 0);
     scrollok(chat_window, TRUE); 
-    // Draw initial borders
+
+    // tell Ncurses to only scroll lines 1 to (Height-2), so messages aren't cut off
+    wsetscrreg(chat_window, 1, chat_height - 2);
+    // make first message print at (1, 1) instead of (0, 0)
+    wmove(chat_window, 1, 0);
+    // draw borders
     box(chat_window, 0, 0);
     box(input_window, 0, 0);
     
     // '>' prompt
     mvwprintw(input_window, 1, 1, "> ");
 
-    // Refresh to show everything
     wrefresh(chat_window);
     wrefresh(input_window);
 }
