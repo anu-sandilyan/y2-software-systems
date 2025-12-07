@@ -283,14 +283,41 @@ void rename_client(int sd, struct sockaddr_in *sender, char *new_name) {
     while (current != NULL) {
         // match by Port AND IP
         if (current->client_port == sender_port && strcmp(current->client_ip, sender_ip) == 0) { 
-            printf("User '%s' has changed their name to '%s'\n", current->name, new_name);
+            char old_name[32];
+            strncpy(old_name, current->name, 31);
+            old_name[31] = '\0';
+
+            printf("User '%s' has changed their name to '%s'\n", old_name, new_name);
 
             strncpy(current->name, new_name, 31);
             current->name[31] = '\0'; // ensure it is a valid string
-            char response[BUFFER_SIZE];
-            snprintf(response, BUFFER_SIZE, "You are now known as %s.", current->name);
+
+            char global_msg[BUFFER_SIZE];
+            snprintf(global_msg, BUFFER_SIZE, "User %s changed their name to %s.", old_name, new_name);
+            add_to_history(global_msg);
+
+            ClientNode *update_mute = head;
+            while (update_mute != NULL) {
+                // update name on other clients' mute lists
+                MutedClients *m = update_mute->muted_client;
+                while (m != NULL) {
+                    if (strcmp(m->name, old_name) == 0) {
+                        strncpy(m->name, new_name, 31);
+                        m->name[31] = '\0';
+                        break; 
+                    }
+                    m = m->next;
+                }
+                if (update_mute != current) {
+                    udp_socket_write(sd, &update_mute->client_addr, global_msg, BUFFER_SIZE);
+                }
+                update_mute = update_mute->next;
+            }
+
+            char new_name_msg[BUFFER_SIZE];
+            snprintf(new_name_msg, BUFFER_SIZE, "You are now known as %s.", current->name);
+            udp_socket_write(sd, sender, new_name_msg, BUFFER_SIZE);
             pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
-            udp_socket_write(sd, sender, response, BUFFER_SIZE);
             return;
         }
         current = current->next;
