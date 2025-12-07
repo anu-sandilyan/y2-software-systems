@@ -137,9 +137,9 @@ int main(int argc, char *argv[])
 
     // wait for threads to exit (when program terminates)
     pthread_join(send_tid, NULL);
-    endwin(); //end ncurses mode
-    pthread_cancel(listen_tid);
+    shutdown(sd, SHUT_RDWR);
     pthread_join(listen_tid, NULL);
+    endwin(); //end ncurses mode
     close(sd);
     system("clear");
     printf("you have exited the chat program. \n");
