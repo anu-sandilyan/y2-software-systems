@@ -3,11 +3,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdbool.h>
 #include <pthread.h>
 #include "udp.h"
 
 pthread_rwlock_t lock = PTHREAD_RWLOCK_INITIALIZER;
 //initialise linked list for clients
+
+//linked list for mute status for all clients
+typedef struct MutedClients {
+    char name[32];
+    struct MutedClients *next;
+} MutedClients;
 typedef struct ClientNode {
     struct sockaddr_in client_addr;
     // attribute fields
@@ -15,6 +22,7 @@ typedef struct ClientNode {
     char client_ip[INET_ADDRSTRLEN]; 
     int client_port;
     struct ClientNode *next;
+    MutedClients *muted_client;
 } ClientNode;
 ClientNode *head = NULL;
 
@@ -115,6 +123,12 @@ void disconnect_client(int sd, struct sockaddr_in *sender) {
             char response[] = "you have been disconnected. bye!";
             udp_socket_write(sd, sender, response, sizeof(response));
             // delete current node
+            MutedClients *m_cur = current->muted_client;
+            while (m_cur != NULL) {
+                MutedClients *m_next = m_cur->next;
+                free(m_cur);
+                m_cur = m_next;
+            }
             free(current);
             pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
             return;
@@ -175,6 +189,12 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
             }
 
             printf("admin kicked user '%s'.\n", current->name);
+            MutedClients *m_cur = current->muted_client;
+            while (m_cur != NULL) {
+                MutedClients *m_next = m_cur->next;
+                free(m_cur);
+                m_cur = m_next;
+            }
             free(current);
             pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
             return;
@@ -221,63 +241,208 @@ void rename_client(int sd, struct sockaddr_in *sender, char *new_name) {
     udp_socket_write(sd, sender, error_msg, sizeof(error_msg));
 }
 
-void say_client(int sd, struct sockaddr_in *sender, char *message) {
-    pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
+static bool reciever_is_muted(const ClientNode *client, const char *reciever) { // CHECK: Has the reciever(2) muted the client(1)
+    //if (!from_client || !target_name) return false;
+    
+    for (const MutedClients *m = client->muted_client; m != NULL; m = m->next) {
+        if (strcmp(m->name, reciever) == 0) return true;
+    }
+    return false;
+}
 
-    ClientNode *sender_node = find_client_node(sender);
-    // check if sender exists 
-    if (sender_node == NULL) {
-        pthread_rwlock_unlock(&lock);
+void mute_client(int sd, struct sockaddr_in *sender, char *target_name) {
+
+    size_t n = strlen(target_name);
+    while (n > 0 && (target_name[n-1] == '\r' || target_name[n-1] == '\n' || target_name[n-1] == ' ')) {
+        target_name[--n] = '\0';
+    }
+
+    pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
+
+    bool target_found = false;
+    for (ClientNode *curr = head; curr != NULL; curr = curr->next) {
+        if (strcmp(curr->name, target_name) == 0) {
+            target_found = true;
+            break;
+        }
+    }
+
+    if (!target_found) {
+        char client_msg[BUFFER_SIZE];
+        snprintf(client_msg, BUFFER_SIZE, "Action Failed: There is no client with name '%s'", target_name);
+        udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+        pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
         return;
     }
-    
-    const char *from = sender_node->name;
 
+    ClientNode* from_client = find_client_node (sender);
+
+    if (reciever_is_muted(from_client, target_name)) {
+        char client_msg[BUFFER_SIZE];
+        snprintf(client_msg, BUFFER_SIZE, "Action Failed: You have already muted %s", target_name);
+        udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+        pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+        return;
+    }
+
+    MutedClients *new_node = malloc(sizeof(MutedClients));
+    strncpy(new_node->name, target_name, 31);
+    new_node->name[31] = '\0';
+
+    new_node->next = from_client->muted_client;
+    from_client->muted_client = new_node;
+
+    char client_msg[BUFFER_SIZE];
+    snprintf(client_msg, BUFFER_SIZE, "%s has been muted.", target_name);
+    udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+            
+        
+}
+
+void unmute_client(int sd, struct sockaddr_in *sender, char *target_name) {
+
+    size_t n = strlen(target_name);
+    while (n > 0 && (target_name[n-1] == '\r' || target_name[n-1] == '\n' || target_name[n-1] == ' ')) {
+        target_name[--n] = '\0';
+    }
+
+    pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
+
+    bool target_found = false;
+    for (ClientNode *curr = head; curr != NULL; curr = curr->next) {
+        if (strcmp(curr->name, target_name) == 0) {
+            target_found = true;
+            break;
+        }
+    }
+
+    if (!target_found) {
+        char client_msg[BUFFER_SIZE];
+        snprintf(client_msg, BUFFER_SIZE, "Action Failed: There is no client with name '%s'", target_name);
+        udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+        pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+        return;
+    }
+
+    ClientNode* from_client = find_client_node(sender);
+
+    if (reciever_is_muted(from_client, target_name)) {
+        //start at top of client list
+        MutedClients *prev = NULL;
+        MutedClients *current = from_client->muted_client;
+
+        while (current != NULL) {
+        // client port should match
+            if (strcmp(current->name, target_name) == 0) {
+                if (prev == NULL) {
+                    ((ClientNode*)from_client)->muted_client = current->next;  // Removing head: update the client's list head
+                } else {
+                    prev->next = current->next;
+                }
+
+                char client_msg[BUFFER_SIZE];
+                snprintf(client_msg, BUFFER_SIZE, "%s has been unmuted", target_name);
+                udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+
+                // delete current node
+                free(current);
+                pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+                return;
+            }   
+            //move pointer to next node
+            prev = current;
+            current = current->next;
+        }
+        pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+
+    }
+    else {
+        char client_msg[BUFFER_SIZE];
+        snprintf(client_msg, BUFFER_SIZE, "Action Failed: %s is already unmuted", target_name);
+        udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+        pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+
+    }
+}
+
+void say_client(int sd, struct sockaddr_in *sender, char *message) {
+    pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
+    
+    const ClientNode* from_client = find_client_node (sender);
     char global_msg[BUFFER_SIZE];
-    int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
+    int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from_client->name, message);
     if (n < 0) return;
     size_t resp_len = (size_t)n;
-    for (ClientNode *current = head; current != NULL; current = current->next) {
-        udp_socket_write(sd, &current->client_addr, global_msg, (int)resp_len);
+
+    for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
+        if (!reciever_is_muted(cur, from_client->name)) {
+        udp_socket_write(sd, &cur->client_addr, global_msg, (int)resp_len);
+        }
     }   
     pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
 }
 
 void sayto_client(int sd, struct sockaddr_in *sender, char *nameandmessage ) {
 
-    size_t idx = strcspn(nameandmessage, " ");
-
+size_t idx = strcspn(nameandmessage, " ");
+    
+    // Parsing logic stays outside the lock for performance
     if (nameandmessage[idx] != ' ') {
         char err[] = "error: format command as 'sayto$ Name Message'";
         udp_socket_write(sd, sender, err, sizeof(err));
         return;
     }
-    else {
-        nameandmessage[idx] = '\0';
-        const char *target_name = nameandmessage;
-        const char *message = nameandmessage + idx + 1;
 
-        ClientNode *sender_node = find_client_node(sender);
-        if (sender_node == NULL) {
-            pthread_rwlock_unlock(&lock);
-            return;
+    nameandmessage[idx] = '\0';
+    const char *target_name = nameandmessage;
+    const char *message = nameandmessage + idx + 1;
+
+    // 1. LOCK List for Reading (Shared Access)
+    pthread_rwlock_rdlock(&lock);
+
+    // 2. Find Sender Node Safely inside the lock
+    const ClientNode* from_client = find_client_node(sender);
+    
+    // Safety Check: Sender may have disconnected
+    if (from_client == NULL) {
+        pthread_rwlock_unlock(&lock);
+        return;
+    }
+
+    char global_msg[BUFFER_SIZE];
+    int n = snprintf(global_msg, sizeof(global_msg), "%s (private): %s", from_client->name, message);
+    if (n < 0) {
+        pthread_rwlock_unlock(&lock);
+        return;
+    }
+    size_t resp_len = (size_t)n;
+
+    // 3. Broadcast Loop
+    int target_found = 0;
+    ClientNode *client = head;
+    while (client != NULL) {
+        // Condition: Recipient is the target name OR is the sender themselves
+        if (strcmp(client->name, target_name) == 0 || client == from_client) {
+            
+            // SECURITY CHECK: Has the recipient muted the sender?
+            if (!reciever_is_muted(client, from_client->name)) {
+                udp_socket_write(sd, &client->client_addr, global_msg, (int)resp_len);
+            }
+            
+            if (strcmp(client->name, target_name) == 0) target_found = 1;
         }
+        client = client->next;
+    }
 
-        char global_msg[BUFFER_SIZE];
-        int n = snprintf(global_msg, sizeof(global_msg), "%s (private): %s", sender_node->name, message);
-        if (n < 0) return;
-        size_t resp_len = (size_t)n;
+    // 4. UNLOCK
+    pthread_rwlock_unlock(&lock);
 
-        pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
-        ClientNode *current = head;
-        while (current != NULL) {
-        if (strcmp(current->name, target_name) == 0 || strcmp(current->name, sender_node->name) == 0) {
-            udp_socket_write(sd, &current->client_addr, global_msg, (int)resp_len);
-        }
-            current = current->next;
-        }
-        pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
-
+    // Optional: Notify sender if user was not found
+    if (!target_found) {
+        char err_msg[BUFFER_SIZE];
+        snprintf(err_msg, BUFFER_SIZE, "error: user '%s' not found.", target_name);
+        udp_socket_write(sd, sender, err_msg, BUFFER_SIZE);
     }
 }
 
@@ -300,7 +465,7 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         }
         //command logic goes here
         if (strcmp(command, "conn") == 0) 
-{
+        {
             connect_client(sd, client_address, message);
         } 
         else if (strcmp(command, "disconn") == 0)
@@ -322,10 +487,17 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         else if (strcmp(command, "sayto") == 0)
         {
             sayto_client(sd, client_address, message);
-        }    
-        else
+        }  
+        else if (strcmp(command, "mute") == 0)
         {
-            printf("unknown command: %s \n", command);
+            mute_client(sd, client_address, message);
+        }  
+        else if (strcmp(command, "unmute") == 0)
+        {
+            unmute_client(sd, client_address, message);
+        }  
+        else 
+        {
             char error_msg[BUFFER_SIZE];
             snprintf(error_msg, BUFFER_SIZE, "error: unknown command '%s'", command);
             udp_socket_write(sd, client_address, error_msg, BUFFER_SIZE);
