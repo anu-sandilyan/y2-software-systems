@@ -34,7 +34,7 @@ void add_client(struct sockaddr_in addr, char *name) {
     pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
 }
 
-const char* find_client(struct sockaddr_in *sender) {
+/* const char* find_client(struct sockaddr_in *sender) {
     //convert port + ip to human readable format, to compare w client attributes
     int sender_port = ntohs(sender->sin_port);
     char sender_ip[INET_ADDRSTRLEN];
@@ -49,6 +49,19 @@ const char* find_client(struct sockaddr_in *sender) {
     }
     pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
     return "unknown error: client not found";
+} */
+
+ClientNode* find_client_node(struct sockaddr_in *sender) {
+    int sender_port = ntohs(sender->sin_port);
+    char sender_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(sender->sin_addr), sender_ip, INET_ADDRSTRLEN);
+
+    for (ClientNode *current = head; current != NULL; current = current->next) {
+        if (current->client_port == sender_port && strcmp(current->client_ip, sender_ip) == 0) {
+            return current; // return node
+        }
+    }
+    return NULL;
 }
 
 void connect_client(int sd, struct sockaddr_in *sender, char *name) {
@@ -59,9 +72,26 @@ void connect_client(int sd, struct sockaddr_in *sender, char *name) {
     printf("connected from IP: %s, port: %d\n", head->client_ip, head->client_port);
 
     // send response only to client who just connected
-    char response[BUFFER_SIZE];
-    snprintf(response, BUFFER_SIZE, "hi %s, you have successfully connected to the chat!", name);
-    udp_socket_write(sd, sender, response, BUFFER_SIZE);
+    char connect_msg[BUFFER_SIZE];
+    snprintf(connect_msg, BUFFER_SIZE, "hi %s, you have successfully connected to the chat!", name);
+
+    char join_msg[BUFFER_SIZE];
+    snprintf(join_msg, BUFFER_SIZE, "%s has joined the chat.", name);
+    // notify all clients about the new user
+
+    pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
+    ClientNode *current = head;
+    while (current != NULL) {
+        if (current->client_port == ntohs(sender->sin_port)) {
+            // Send specific welcome message to the new user
+             udp_socket_write(sd, &current->client_addr, connect_msg, BUFFER_SIZE);
+        } else {
+            // Send "X has joined" to everyone else
+             udp_socket_write(sd, &current->client_addr, join_msg, BUFFER_SIZE);
+        }
+        current = current->next;
+    }
+    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
 }
 
 void disconnect_client(int sd, struct sockaddr_in *sender) {
@@ -105,12 +135,12 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
         udp_socket_write(sd, sender, error_msg, sizeof(error_msg));
         return;
     }
+    pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
     // check if admin is sending the kick request
-    const char *admin_name = find_client(sender);
-    printf("admin '%s' (Port 6666) is kicking user '%s'\n", admin_name, target_name);
+    ClientNode *admin_node = find_client_node(sender);
+    printf("admin '%s' (Port 6666) is kicking user '%s'\n", admin_node->name, target_name);
 
     // if admin, find target user to kick
-    pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
     ClientNode *current = head;
     ClientNode *prev = NULL;
     while (current != NULL) {
@@ -192,16 +222,23 @@ void rename_client(int sd, struct sockaddr_in *sender, char *new_name) {
 }
 
 void say_client(int sd, struct sockaddr_in *sender, char *message) {
+    pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
+
+    ClientNode *sender_node = find_client_node(sender);
+    // check if sender exists 
+    if (sender_node == NULL) {
+        pthread_rwlock_unlock(&lock);
+        return;
+    }
     
-    const char *from = find_client(sender);
+    const char *from = sender_node->name;
 
     char global_msg[BUFFER_SIZE];
     int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
     if (n < 0) return;
     size_t resp_len = (size_t)n;
-    pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
-    for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
-        udp_socket_write(sd, &cur->client_addr, global_msg, (int)resp_len);
+    for (ClientNode *current = head; current != NULL; current = current->next) {
+        udp_socket_write(sd, &current->client_addr, global_msg, (int)resp_len);
     }   
     pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
 }
@@ -220,17 +257,21 @@ void sayto_client(int sd, struct sockaddr_in *sender, char *nameandmessage ) {
         const char *target_name = nameandmessage;
         const char *message = nameandmessage + idx + 1;
 
-        const char *sender_name = find_client(sender);
+        ClientNode *sender_node = find_client_node(sender);
+        if (sender_node == NULL) {
+            pthread_rwlock_unlock(&lock);
+            return;
+        }
 
         char global_msg[BUFFER_SIZE];
-        int n = snprintf(global_msg, sizeof(global_msg), "%s (private): %s", sender_name, message);
+        int n = snprintf(global_msg, sizeof(global_msg), "%s (private): %s", sender_node->name, message);
         if (n < 0) return;
         size_t resp_len = (size_t)n;
 
         pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
         ClientNode *current = head;
         while (current != NULL) {
-        if (strcmp(current->name, target_name) == 0 || strcmp(current->name, sender_name) == 0) {
+        if (strcmp(current->name, target_name) == 0 || strcmp(current->name, sender_node->name) == 0) {
             udp_socket_write(sd, &current->client_addr, global_msg, (int)resp_len);
         }
             current = current->next;
@@ -286,12 +327,14 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         {
             printf("unknown command: %s \n", command);
             char error_msg[BUFFER_SIZE];
-            snprintf(error_msg, BUFFER_SIZE, "Error: Unknown command '%s'", command);
+            snprintf(error_msg, BUFFER_SIZE, "error: unknown command '%s'", command);
             udp_socket_write(sd, client_address, error_msg, BUFFER_SIZE);
         } //implement command logic here
     } else 
     { 
-        printf("invalid message format: use 'command$ message\n");
+        char error_msg[BUFFER_SIZE];
+        snprintf(error_msg, BUFFER_SIZE, "invalid message format: use 'command$ message");
+        udp_socket_write(sd, client_address, error_msg, BUFFER_SIZE);
     }
 }
 
