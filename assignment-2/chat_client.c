@@ -74,12 +74,46 @@ void *listener_thread(void *arg) {
                 server_response[rc] = '\0';
             }
             pthread_mutex_lock(&screen_mutex);
-            wprintw(chat_window, " %s\n", server_response);
+
+            if (strncmp(server_response, "Error:", 6) == 0)
+             {
+                wattron(chat_window, COLOR_PAIR(1)); // turn on RED
+                wprintw(chat_window, " %s\n", server_response);
+                wattroff(chat_window, COLOR_PAIR(1)); // turn off RED
+            } else if(strstr(server_response, " connected") != NULL || strstr(server_response, "joined") != NULL)
+            {
+                wattron(chat_window, COLOR_PAIR(2)); // turn on GREEN
+                wprintw(chat_window, " %s\n", server_response);
+                wattroff(chat_window, COLOR_PAIR(2)); // turn off GREEN
+            } else if(strstr(server_response, "removed") != NULL || strstr(server_response, "kicked") != NULL || strstr(server_response, "left") != NULL || strstr(server_response, "muted") != NULL || strstr(server_response, "unmuted") != NULL)
+            {
+                wattron(chat_window, COLOR_PAIR(3) | A_BOLD); // turn on GREY
+                wprintw(chat_window, " %s\n", server_response);
+                wattroff(chat_window, COLOR_PAIR(3) | A_BOLD); // turn off GREY
+            }  else if(strstr(server_response, "now known as") != NULL || strstr(server_response, "changed their name to") != NULL)
+            {
+                wattron(chat_window, COLOR_PAIR(4)); // turn on CYAN
+                wprintw(chat_window, " %s\n", server_response);
+                wattroff(chat_window, COLOR_PAIR(4)); // turn off CYAN
+            }
+            else if(strstr(server_response, "(private):") != NULL)
+            {
+                wattron(chat_window, COLOR_PAIR(5)); // turn on YELLOW
+                wprintw(chat_window, " %s\n", server_response);
+                wattroff(chat_window, COLOR_PAIR(5)); // turn off YELLOW
+            }
+            else 
+            {
+                // print normally
+                wprintw(chat_window, " %s\n", server_response);
+
+            }
             box(chat_window, 0, 0);
             wrefresh(chat_window); //refresh displays printw to client
             wrefresh(input_window); //allows user to continue typing
             pthread_mutex_unlock(&screen_mutex);
             //removed printf, use ncurses to print to chat window instead
+            
         }
     }
     return NULL;
@@ -90,6 +124,17 @@ void setup_screen() {
     cbreak();             // disable line buffering (pass characters immediately)
     echo();               // show typed characters
     keypad(stdscr, TRUE); // enable function keys
+
+    //enable colors if the terminal supports them 
+    if (has_colors()) {
+        start_color();
+        use_default_colors(); 
+        init_pair(1, COLOR_RED, -1); // pair 1: red text + default bg
+        init_pair(2, COLOR_GREEN, -1); // pair 2: green text + default bg
+        init_pair(3, COLOR_BLACK, -1); // pair 3: grey text + default bg
+        init_pair(4, COLOR_CYAN, -1); // pair 4: cyan text + default bg
+        init_pair(5, COLOR_YELLOW, -1); // pair 5: yellow text + default bg
+    }
 
     int height, width;
     getmaxyx(stdscr, height, width);

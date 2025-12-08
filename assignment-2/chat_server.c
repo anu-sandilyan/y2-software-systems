@@ -367,7 +367,7 @@ void mute_client(int sd, struct sockaddr_in *sender, char *target_name) {
 
     if (reciever_is_muted(from_client, target_name)) {
         char client_msg[BUFFER_SIZE];
-        snprintf(client_msg, BUFFER_SIZE, "You have already muted %s", target_name);
+        snprintf(client_msg, BUFFER_SIZE, "You have already muted %s.", target_name);
         udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
         pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
         return;
@@ -407,7 +407,7 @@ void unmute_client(int sd, struct sockaddr_in *sender, char *target_name) {
 
     if (!target_found) {
         char client_msg[BUFFER_SIZE];
-        snprintf(client_msg, BUFFER_SIZE, "Error: There is no client with name '%s'", target_name);
+        snprintf(client_msg, BUFFER_SIZE, "Error: There is no client with name %s.", target_name);
         udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
         pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
         return;
@@ -447,7 +447,7 @@ void unmute_client(int sd, struct sockaddr_in *sender, char *target_name) {
     }
     else {
         char client_msg[BUFFER_SIZE];
-        snprintf(client_msg, BUFFER_SIZE, "%s is already unmuted", target_name);
+        snprintf(client_msg, BUFFER_SIZE, "%s is already unmuted.", target_name);
         udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
         pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
 
@@ -598,7 +598,7 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
     } else 
     { 
         char error_msg[BUFFER_SIZE];
-        snprintf(error_msg, BUFFER_SIZE, "Invalid message format: Use 'command$ message");
+        snprintf(error_msg, BUFFER_SIZE, "Error: Invalid message format (use 'command$ message')");
         udp_socket_write(sd, client_address, error_msg, BUFFER_SIZE);
     }
 }
