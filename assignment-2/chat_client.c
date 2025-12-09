@@ -1,11 +1,10 @@
-
-
 #include <stdio.h>
 #include "udp.h"
 #include <stdlib.h>    
 #include <pthread.h>    // for threads
 #include <string.h>     // for strcspn, strcmp
 #include <ncurses.h>   // for terminal window UI control
+#include <locale.h>
 
 WINDOW *chat_window;
 WINDOW *input_window;
@@ -165,6 +164,7 @@ void setup_screen() {
 // client code
 int main(int argc, char *argv[])
 {
+    setlocale(LC_ALL, ""); // <--- ADD THIS LINE
     int client_port = CLIENT_PORT;
     if (argc > 1) {
     client_port = atoi(argv[1]);
