@@ -5,6 +5,11 @@
 #include <stdlib.h>    
 #include <pthread.h>    // for threads
 #include <string.h>     // for strcspn, strcmp
+#include <ncurses.h>   // for terminal window UI control
+
+WINDOW *chat_window;
+WINDOW *input_window;
+pthread_mutex_t screen_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 //port = 0 -> assigns any free port
 #define CLIENT_PORT 0
@@ -22,22 +27,30 @@ void *sender_thread(void *arg) {
     
     // initialise server address (Localhost, Port 12000)
     // We are currently running the server on localhost (127.0.0.1).
-    // You can change this to a different IP address
-    // when running the server on a different machine.
     // (See details of the function in udp.h)
     set_socket_addr(&server_addr, "127.0.0.1", SERVER_PORT);
 
     // Storage for request and response messages
     char client_request[BUFFER_SIZE];
     while (1) {
-        // stdin reads user message
-        fgets(client_request, BUFFER_SIZE, stdin);
+        // wgetnstr reads user message
+        wgetnstr(input_window, client_request, BUFFER_SIZE - 1);
+        if (strlen(client_request) == 0) continue;
         //remove /n char at the end
         client_request[strcspn(client_request, "\n")] = 0;
         // This function writes to the server (sends request)
         // through the socket at sd.
         // (See details of the function in udp.h)
         udp_socket_write(sd, &server_addr, client_request, BUFFER_SIZE);
+        if (strcmp(client_request, "exit") == 0) {
+            break; // exit program fully
+        }
+        pthread_mutex_lock(&screen_mutex);
+        wclear(input_window);        // clear window
+        box(input_window, 0, 0);
+        mvwprintw(input_window, 1, 1, "> "); // reprint prompt char
+        wrefresh(input_window);      
+        pthread_mutex_unlock(&screen_mutex);
     }
     return NULL;
 }
@@ -54,13 +67,50 @@ void *listener_thread(void *arg) {
         // the same as server_addr.
         // (See details of the function in udp.h)
         int rc = udp_socket_read(sd, &sender_addr, server_response, BUFFER_SIZE);
-        if (rc > 0) {
-            // Safety: null terminate
-            if (rc < BUFFER_SIZE) server_response[rc] = '\0';
-            printf("%s\n", server_response);
+        if (rc <= 0) { //happens on socket shutdown
+            break; 
+        } else {
+            if (rc < BUFFER_SIZE) {
+                server_response[rc] = '\0';
+            }
+            pthread_mutex_lock(&screen_mutex);
+            wprintw(chat_window, " %s\n", server_response);
+            box(chat_window, 0, 0);
+            wrefresh(chat_window); //refresh displays printw to client
+            wrefresh(input_window); //allows user to continue typing
+            pthread_mutex_unlock(&screen_mutex);
+            //removed printf, use ncurses to print to chat window instead
         }
     }
     return NULL;
+}
+
+void setup_screen() {
+    initscr();            
+    cbreak();             // Disable line buffering (pass characters immediately)
+    echo();               // Show typed characters
+    keypad(stdscr, TRUE); // Enable function keys
+
+    int height, width;
+    getmaxyx(stdscr, height, width);
+
+    int input_height = 3;
+    int chat_height = height - input_height;
+
+    // Create windows: newwin(rows, cols, start_y, start_x)
+    chat_window = newwin(chat_height, width, 0, 0);
+    input_window = newwin(input_height, width, chat_height, 0);
+    scrollok(chat_window, TRUE); 
+    // Draw initial borders
+    box(chat_window, 0, 0);
+    box(input_window, 0, 0);
+    
+    // '>' prompt
+    mvwprintw(input_window, 1, 1, "> ");
+
+    // Refresh to show everything
+    wrefresh(chat_window);
+    wrefresh(input_window);
 }
 
 // client code
@@ -76,6 +126,7 @@ int main(int argc, char *argv[])
     // and dynamic port number user_port.
     // (See details of the function in udp.h)
     int sd = udp_socket_open(client_port);
+    setup_screen();
 
     // initialise sender + listener threads w ids
     pthread_t send_tid, listen_tid;
@@ -86,6 +137,11 @@ int main(int argc, char *argv[])
 
     // wait for threads to exit (when program terminates)
     pthread_join(send_tid, NULL);
+    endwin(); //end ncurses mode
+    pthread_cancel(listen_tid);
     pthread_join(listen_tid, NULL);
+    close(sd);
+    system("clear");
+    printf("you have exited the chat program. \n");
     return 0;
 }

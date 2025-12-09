@@ -1,10 +1,21 @@
 
+#define _XOPEN_SOURCE 700
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <pthread.h>
 #include "udp.h"
+
+pthread_rwlock_t lock = PTHREAD_RWLOCK_INITIALIZER;
+
+//linked list for mute status for all clients
+typedef struct MutedClients {
+    char name[32];
+    struct MutedClients *next;
+} MutedClients;
+//MutedClients *mhead = NULL;
 
 //initialise linked list for clients
 typedef struct ClientNode {
@@ -14,20 +25,124 @@ typedef struct ClientNode {
     char client_ip[INET_ADDRSTRLEN]; 
     int client_port;
     struct ClientNode *next;
+    MutedClients *Muted_Client;
+    
 } ClientNode;
 ClientNode *head = NULL;
 
-const char* find_sender(struct sockaddr_in *sender) {
+static bool reciever_is_muted(const ClientNode *client, const char *reciever) { // CHECK: Has the reciever(2) muted the client(1)
+    //if (!from_client || !target_name) return false;
+    
+    for (const MutedClients *m = client->Muted_Client; m != NULL; m = m->next) {
+        if (strcmp(m->name, reciever) == 0) return true;
+    }
+    return false;
+}
+
+const ClientNode* find_clientnode(struct sockaddr_in *sender) {
     // Find sender name
     for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
         if (cur->client_addr.sin_addr.s_addr == sender->sin_addr.s_addr &&
             cur->client_addr.sin_port == sender->sin_port) {
-            return cur->name;
+            return cur;
         }
     }
-    return "unknown";
+    return NULL;
 }
 
+void mute_client(int sd, struct sockaddr_in *sender, char *target_name) {
+
+    const ClientNode* from_client = find_clientnode (sender);
+
+    size_t n = strlen(target_name);
+    while (n > 0 && (target_name[n-1] == '\r' || target_name[n-1] == '\n' || target_name[n-1] == ' ')) {
+        target_name[--n] = '\0';
+    }
+
+    if (!from_client) {
+        char client_msg[BUFFER_SIZE];
+        snprintf(client_msg, BUFFER_SIZE, "Action Failed: There is no client with name '%s'", target_name);
+        udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+        return;
+    }
+
+
+    if (reciever_is_muted(from_client, target_name)) {
+        char client_msg[BUFFER_SIZE];
+        snprintf(client_msg, BUFFER_SIZE, "Action Failed: You have already muted %s", target_name);
+        udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+        return;
+    }
+
+    else {
+        for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
+            if ( strcmp(cur->name, from_client->name) == 0 ) {
+                
+                MutedClients *new_node = (MutedClients *)malloc(sizeof(MutedClients));
+                strncpy(new_node->name, target_name, 31);
+                new_node->name[31] = '\0';
+
+                new_node->next = cur->Muted_Client;   // push onto this sender client's list
+                cur->Muted_Client = new_node;
+
+                char client_msg[BUFFER_SIZE];
+                snprintf(client_msg, BUFFER_SIZE, "%s has been muted", target_name);
+                udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+                
+            }
+        }
+    }
+}
+
+void unmute_client(int sd, struct sockaddr_in *sender, char *target_name) {
+
+    const ClientNode* from_client = find_clientnode(sender);
+
+    if (!from_client) {
+        char client_msg[] = "Action Failed: acting client not found";
+        udp_socket_write(sd, sender, client_msg, (int)strlen(client_msg));
+        return;
+    }
+
+    size_t tn = strlen(target_name);
+    while (tn > 0 && (target_name[tn-1] == '\r' || target_name[tn-1] == '\n' || target_name[tn-1] == ' ')) {
+        target_name[--tn] = '\0';
+    }
+
+    if (reciever_is_muted(from_client, target_name)) {
+        //start at top of client list
+        MutedClients *prev = NULL;
+        MutedClients *current = from_client->Muted_Client;
+
+        while (current != NULL) {
+        // client port should match
+            if (strcmp(current->name, target_name) == 0) {
+                if (prev == NULL) {
+                    ((ClientNode*)from_client)->Muted_Client = current->next;  // Removing head: update the client's list head
+                } else {
+                    prev->next = current->next;
+                }
+
+                char client_msg[BUFFER_SIZE];
+                snprintf(client_msg, BUFFER_SIZE, "%s has been unmuted", target_name);
+                udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+
+                // delete current node
+                free(current);
+                return;
+            }   
+            //move pointer to next node
+            prev = current;
+            current = current->next;
+        }
+    }
+
+    else {
+        char client_msg[BUFFER_SIZE];
+        snprintf(client_msg, BUFFER_SIZE, "Action Failed: %s is already unmuted", target_name);
+        udp_socket_write(sd, sender, client_msg, BUFFER_SIZE);
+    }
+}
 
 void add_client(struct sockaddr_in addr, char *name) {
     ClientNode *new_node = malloc(sizeof(ClientNode));
@@ -36,12 +151,16 @@ void add_client(struct sockaddr_in addr, char *name) {
 
     // 2. Store the IP as a string
     inet_ntop(AF_INET, &(addr.sin_addr), new_node->client_ip, INET_ADDRSTRLEN);
+
     //copy client name into the list
     strncpy(new_node->name, name, 31);
     new_node->name[31] = '\0';
 
+    // Push client onto client list
     new_node->next = head;
+    new_node->Muted_Client = NULL; // initialise empty mute list
     head = new_node;
+
 }
 
 void connect_client(int sd, struct sockaddr_in *sender, char *name) {
@@ -58,10 +177,19 @@ void connect_client(int sd, struct sockaddr_in *sender, char *name) {
 }
 
 void disconnect_client(int sd, struct sockaddr_in *sender) {
+
+    const ClientNode* client = find_clientnode (sender);
     int sender_port = ntohs(sender->sin_port);
     //start at top of client list
     ClientNode *current = head;
     ClientNode *prev = NULL;
+
+    for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
+        if (reciever_is_muted(client, cur->name)) {
+            unmute_client(sd, sender,cur->name);
+        }
+    }
+
 
     //find disconnecting client in list
     while (current != NULL) {
@@ -136,23 +264,18 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
 
 void say_client(int sd, struct sockaddr_in *sender, char *message) {
     
-    const char *from = find_sender(sender);
+    const ClientNode* from_client = find_clientnode (sender);
 
     char global_msg[BUFFER_SIZE];
-    int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
+    int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from_client->name, message);
     if (n < 0) return;
     size_t resp_len = (size_t)n;
 
     for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
+        if (!reciever_is_muted(cur, from_client->name)) {
         udp_socket_write(sd, &cur->client_addr, global_msg, (int)resp_len);
+        }
     }   
-
-    
-   // char global_msg[BUFFER_SIZE];
-   // snprintf(global_msg, BUFFER_SIZE, "%s\n", message);
-
-   // size_t resp_len = strlen(global_msg);
-   // udp_socket_write(sd, sender, global_msg, resp_len);
 
 }
 
@@ -165,32 +288,25 @@ void sayto_client(int sd, struct sockaddr_in *sender, char *sendtoandmessage ) {
         const char *message = sendtoandmessage + idx + 1;
         //while (*rest == ' ') rest++; // skip extra spaces
 
-    const char *from = find_sender(sender);
+        const ClientNode* from_client = find_clientnode (sender);
 
-    char global_msg[BUFFER_SIZE];
-    int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from, message);
-    if (n < 0) return;
-    size_t resp_len = (size_t)n;
+        char global_msg[BUFFER_SIZE];
+        int n = snprintf(global_msg, sizeof(global_msg), "%s: %s", from_client->name, message);
+        if (n < 0) return;
+        size_t resp_len = (size_t)n;
 
 
-    ClientNode *client = head;
-    while (client != NULL) {
-        if ( strcmp(client->name, sendto) == 0 || strcmp(client->name, from) == 0 ) { //|| client == from) {
-            udp_socket_write(sd, &client->client_addr, global_msg, (int)resp_len);
+        ClientNode *client = head;
+        while (client != NULL) {
+            if ( strcmp(client->name, sendto) == 0 || strcmp(client->name, from_client->name) == 0 ) {
+                if (!reciever_is_muted(client,from_client->name)) { //|| client == from) {
+                    udp_socket_write(sd, &client->client_addr, global_msg, (int)resp_len);
+                }
+            }
+            client = client->next;
         }
-        client = client->next;
+
     }
-
-
-
-    //for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
-      //  udp_socket_write(sd, &cur->client_addr, global_msg, (int)resp_len);
-    //}
-}
-}
-
-void mute_client(int sd, struct sockaddr_in *sender, char *target_name) {
-    
 }
 
 void parse_request(char *client_request, int sd, struct sockaddr_in *client_address){
@@ -227,7 +343,13 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         } 
         else if (strcmp(command, "sayto") == 0){
             sayto_client(sd, client_address, message);
-        }    
+        }          
+        else if (strcmp(command, "mute") == 0){
+            mute_client(sd, client_address, message);
+        }   
+        else if (strcmp(command, "unmute") == 0){
+            unmute_client(sd, client_address, message);
+        }  
         else
         {
             printf("unknown command: %s \n", command);
@@ -241,8 +363,7 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
     }
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]){
 
     // This function opens a UDP socket,
     // binding it to all IP interfaces of this machine,
