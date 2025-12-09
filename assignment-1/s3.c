@@ -250,25 +250,30 @@ void child(char *args[], int argsc)
 
 //TO DO: add functionality for special cd commands (e.g. ~, -)
 void cd(char *args[], int argsc)
-{ //cd function 
+{ 
     static char old_pwd[MAX_PROMPT_LEN] = "";
-    //save old_pwd as current working directory before cd
     char current_pwd[MAX_PROMPT_LEN];
+
+    // 1. Get current directory so we can save it later as 'old_pwd'
     if (getcwd(current_pwd, sizeof(current_pwd)) == NULL) {
         perror("error: getcwd failed");
         return; 
     }
 
-    //in the shell, "cd -" prints the directory
     char *new_dir = NULL;
     bool print_new_dir = false;
 
-    if(argsc < 2) { //if no arg, cd to home
+    // 2. Determine the target directory based on arguments
+    if(argsc < 2) { 
+        // Case: "cd" (no arguments) -> Go to HOME
         new_dir = getenv("HOME");
-        chdir(getenv("HOME")); 
-    } else if (strcmp(args[1], "~") == 0) {
+    } 
+    else if (strcmp(args[1], "~") == 0) {
+        // Case: "cd ~" -> Go to HOME
         new_dir = getenv("HOME");
-    } else if(strcmp(args[1], "-" == 0)){
+    } 
+    else if(strcmp(args[1], "-") == 0){
+        // Case: "cd -" -> Go to previous directory
         if (old_pwd[0] == '\0') {
             fprintf(stderr, "error: cd failed: OLDPWD not set\n");
             return;
@@ -276,28 +281,28 @@ void cd(char *args[], int argsc)
         new_dir = old_pwd;
         print_new_dir = true;
     } 
-    else { // normal case
+    else { 
+        // Case: "cd foldername" -> Go to that folder
         new_dir = args[1];
-    } //error handling
+    }
+
+    // 3. Safety check
     if (new_dir == NULL) {
-         perror("error: cd failed: invalid destination");
+         fprintf(stderr, "error: cd failed: invalid destination\n");
          return;
     }
-    if(chdir(args[1]) != 0) {  //error handling
-        perror("error: cd failed: invalid file or directory path");
-    }
-    if (chdir(destination) != 0) {
-        perror("error: cd failed: invalid file or directory path");
+
+    // 4. Execute chdir ONLY ONCE using the resolved 'new_dir'
+    // (Do not use args[1] here, as it might be "~" or "-")
+    if (chdir(new_dir) != 0) {
+        perror("error: cd failed");
     } else {
-        //update old_pwd if cd is sucessful
+        // 5. Success! Update old_pwd
         strcpy(old_pwd, current_pwd);
         
-        // print new directory if user input "cd -"
+        // Print directory if user used "cd -"
         if (print_new_dir) {
-            char new_pwd[MAX_LINE];
-            if (getcwd(new_pwd, sizeof(new_pwd)) != NULL) {
-                printf("%s\n", new_pwd);
-            }
+            printf("%s\n", new_dir);
         }
     }
 }
