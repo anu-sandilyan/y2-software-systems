@@ -9,7 +9,8 @@
     - [Implementation Details](#implementation-details)
 - #### Assignment 2 - Multithreaded Chat Application
 
-### Assignment 1 - Shell Implementation
+
+## Assignment 1 - Shell Implementation
 
 The **s3** program is a functional shell implementation in C, designed to replicate fundamental features of standard shells like Bash. This project demonstrates process management, inter-process communication (pipes), file redirection, and recursive command execution.
 
@@ -94,3 +95,8 @@ Logic: The parser identifies the outer parentheses, spawns a child shell, which 
 * Tokenization: User input is parsed using strtok for simple commands, but custom parsing logic is used for subshells and batching to handle nested delimiters safely.
 
 * Subshell Recursion: When a subshell (...) is detected, the program calls fork() and the child executes execvp("./s3", "-c", "inner_command"). This re-uses the shell's own parsing logic for the inner content.
+
+
+
+## Assignment 2 - Multithreaded Chat Application
+
