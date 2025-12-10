@@ -1,4 +1,4 @@
-# Assignment 1 - Shell Implementation
+# Assignment 1 - Shell Implementation & Assignment 2 - Multithreaded Chat Application
 
 The **s3** program is a functional shell implementation in C, designed to replicate fundamental features of standard shells like Bash. This project demonstrates process management, inter-process communication (pipes), file redirection, and recursive command execution.
 
