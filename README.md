@@ -1,7 +1,7 @@
 # Assignment 1 - Shell Implementation & Assignment 2 - Multithreaded Chat Application
 
 ## Table of Contents
-- #### Assignment 1 - Shell Implementation
+- #### [Assignment 1 - Shell Implementation](#Assignment-1---Shell-Implementation)
     - [Compilation](#compilation)
     - [Features Implemented](#features-implemented)
     - [Proposed Extensions (PEs)](#proposed-extensions-pes)
@@ -14,7 +14,7 @@
 
 The **s3** program is a functional shell implementation in C, designed to replicate fundamental features of standard shells like Bash. This project demonstrates process management, inter-process communication (pipes), file redirection, and recursive command execution.
 
-## Compilation
+### Compilation
 
 To compile the shell, ensure `s3.c`, `s3main.c`, and `s3.h` are in the same directory. Open the Linux terminal and navigate to the directory with the program files. Use the GNU Compiler Collection (GCC) and type:
 
@@ -31,13 +31,13 @@ chmod +x s3
 ```
 Then rerun the previous command, and it should start.
 
-## Features Implemented
+### Features Implemented
 
-### 1. Basic Command Execution
+#### 1. Basic Command Execution
 
 The shell parses user input using a string tokenizer, and executes standard shell commands (e.g., ls, grep, echo) using fork(), execvp(), and wait() calls to handle child process creation, execution and reaping.
 
-### 2. Built-in Commands
+#### 2. Built-in Commands
 
 Added special functions to parse and execute these more complex commands:
 
@@ -53,7 +53,7 @@ Added special functions to parse and execute these more complex commands:
 
 Additionally, the shell prompt dynamically updates to show the current working directory: [/current/path][s3]$.
 
-### 3. Redirection
+#### 3. Redirection
 
 Supports standard input/output redirection using dup2():
 
@@ -63,32 +63,32 @@ Supports standard input/output redirection using dup2():
 
 * < : Redirect standard input from a file.
 
-### 4. Pipelines
+#### 4. Pipelines
 
 Supports linking multiple commands where the output of one becomes the input of the next using pipe(), and supports multiple pipes in one input e.g.
 ```bash
 ls | grep .c | wc -l
 ```
 
-### 5. Batched Commands
+#### 5. Batched Commands
 Supports executing multiple independent commands on a single line separated by semicolons (;), e.g
 ```bash
 mkdir test; cd test; ls
 ```
 
-## Proposed Extensions (PEs)
-### PE 1: Subshells
+### Proposed Extensions (PEs)
+#### PE 1: Subshells
 
 The shell supports grouping commands inside parentheses ( ... ). These commands execute in a separate 'subshell' child process. Side effects (like cd) inside the subshell do not affect the main shell. This was implemented by recursively launching the shell binary with the -c flag.
 
-### PE 2: Nested Subshells
+#### PE 2: Nested Subshells
 The shell supports nesting subshells to arbitrary depths.
 
 Example: (echo Level 1 ; (echo Level 2 ; (cd /tmp ; pwd)))
 
 Logic: The parser identifies the outer parentheses, spawns a child shell, which then parses the inner content, recursively spawning further children if necessary.
 
-## Implementation Details
+### Implementation Details
 
 * Process Management: The shell uses a standard implementation of parent-child processes. The parent waits for the child process to complete unless pipelining is involved, in which case it manages file descriptors to chain processes together.
 
