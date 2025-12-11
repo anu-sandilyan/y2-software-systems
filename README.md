@@ -1,4 +1,5 @@
-# Assignment 1 - Shell Implementation & Assignment 2 - Multithreaded Chat Application
+#Y2 Software Systems Assignments
+##### By Anu Sandilyan and Divyaa Nagasundhar
 
 ## Table of Contents
 - #### [Assignment 1 - Shell Implementation](#Assignment-1---Shell-Implementation)
