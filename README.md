@@ -1,4 +1,4 @@
-#Y2-Software-Systems-Assignments
+# Y2 Software Systems Assignments
 ##### By Anu Sandilyan and Divyaa Nagasundhar
 
 ## Table of Contents
