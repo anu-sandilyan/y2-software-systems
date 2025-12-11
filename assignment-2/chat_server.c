@@ -1,6 +1,7 @@
 #define _XOPEN_SOURCE 700
 #define _DEFAULT_SOURCE // Unhides usleep
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -40,6 +41,8 @@ typedef struct ClientNode {
     char name[32]; 
     char client_ip[INET_ADDRSTRLEN]; 
     int client_port;
+    bool pinged;
+    time_t time_stamp;
     struct ClientNode *next;
     MutedClients *muted_client;
 } ClientNode;
@@ -95,6 +98,8 @@ void add_client(struct sockaddr_in addr, char *name) {
     //copy client name into the list
     strncpy(new_node->name, name, 31);
     new_node->name[31] = '\0';
+    new_node->pinged = false;
+    new_node->time_stamp = time(NULL);
     new_node->muted_client = NULL; // init list to empty
     pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
     new_node->next = head;
@@ -208,7 +213,7 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
     pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
     // check if admin is sending the kick request
     ClientNode *admin_node = find_client_node(sender);
-if (admin_node == NULL) {
+    if (admin_node == NULL) {
          // if admin hasn't connected yet
          return;
     } else {
@@ -479,8 +484,7 @@ void say_client(int sd, struct sockaddr_in *sender, char *message) {
 
 void sayto_client(int sd, struct sockaddr_in *sender, char *nameandmessage ) {
 
-size_t idx = strcspn(nameandmessage, " ");
-    
+    size_t idx = strcspn(nameandmessage, " ");
     // Parsing logic stays outside the lock for performance
     if (nameandmessage[idx] != ' ') {
         char err[] = "Error: Format command as 'sayto$ Name Message'";
@@ -538,9 +542,17 @@ size_t idx = strcspn(nameandmessage, " ");
         udp_socket_write(sd, sender, err_msg, BUFFER_SIZE);
     }
 }
+void update_activity(struct sockaddr_in *client_address){
+    ClientNode* client = find_client_node(client_address);
+    if (client == NULL)
+        return;
+    client->time_stamp = time(NULL);
+    client->pinged = false;
+}
 
 void parse_request(char *client_request, int sd, struct sockaddr_in *client_address){
-        //split string into command + message, with $ delimiter
+    
+    //split string into command + message, with $ delimiter
     char *delimiter = strchr(client_request, '$');
     if (delimiter != NULL) {
         // replace '$' with null terminator to split string
@@ -567,35 +579,44 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
         } 
         else if (strcmp(command, "kick") == 0)
         {
+            update_activity(client_address);
             kick_client(sd, client_address, message);
         } 
+        
         else if (strcmp(command, "rename") == 0) 
-        {
+        {      
+            update_activity(client_address);
             rename_client(sd, client_address, message);
         }
         else if (strcmp(command, "say") == 0)
         {
+            update_activity(client_address);
             say_client(sd, client_address, message);
         } 
         else if (strcmp(command, "sayto") == 0)
         {
+            update_activity(client_address);
             sayto_client(sd, client_address, message);
         }  
         else if (strcmp(command, "mute") == 0)
         {
+            update_activity(client_address);
             mute_client(sd, client_address, message);
         }  
         else if (strcmp(command, "unmute") == 0)
         {
+            update_activity(client_address);
             unmute_client(sd, client_address, message);
         }  
         else 
         {
+            update_activity(client_address);
             char error_msg[BUFFER_SIZE];
             snprintf(error_msg, BUFFER_SIZE, "Error: Unknown command '%s'", command);
             udp_socket_write(sd, client_address, error_msg, BUFFER_SIZE);
         } //implement command logic here
-    } else 
+    } 
+    else 
     { 
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, BUFFER_SIZE, "Error: Invalid message format (use 'command$ message')");
@@ -618,6 +639,46 @@ void *handle_request_thread(void *arg) {
     return NULL;
 }
 
+void *checking_inactivity(void *arg) {
+    int sd = *((int*)arg);
+    const int THRESHOLD = 300;   // 5 minutes = 300 seconds
+
+    while (1) {
+        sleep(30);  // Check every 30 seconds
+
+        pthread_rwlock_wrlock(&lock);
+        ClientNode *prev = NULL;
+        ClientNode *cur = head;
+
+        time_t now = time(NULL);
+
+        while (cur != NULL) {
+            double inactive = difftime(now, cur->time_stamp);
+
+            if (inactive >= THRESHOLD) {
+
+                if (!(cur->pinged)) {
+                    // First time inactivity exceeded → send ping$
+                    udp_socket_write(sd, &cur->client_addr, "ping$", 6);
+                    cur->pinged = true;
+                    printf("User '%s' has been pinged.\n", cur->name);
+                }
+
+                else {
+                    printf("User '%s' has been timed out.\n", cur->name);
+                    disconnect_client( sd, &cur->client_addr);
+                }
+                
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+        pthread_rwlock_unlock(&lock);
+    }
+
+}
+
+
 int main(int argc, char *argv[])
 {
 
@@ -629,6 +690,10 @@ int main(int argc, char *argv[])
 
     assert(sd > -1);
     printf("Server is listening on port: %d\n", SERVER_PORT);
+
+    pthread_t checking_inactivity_thread;
+    pthread_create(&checking_inactivity_thread, NULL, checking_inactivity, &sd);
+    pthread_detach(checking_inactivity_thread);
 
     // Server main loop
     while (1) 
@@ -669,12 +734,6 @@ int main(int argc, char *argv[])
                 pthread_detach(tid); // clean up thread resources
             }
 
-
-            // This function writes back to the incoming client,
-            // whose address is now available in client_address, 
-            // through the socket at sd.
-            // (See details of the function in udp.h)
-            //rc = udp_socket_write(sd, &client_address, server_response, BUFFER_SIZE);
         }
     }
 
