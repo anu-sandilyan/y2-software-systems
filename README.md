@@ -15,6 +15,7 @@
     - Proposed Extensions (PEs)
         - History at Connection
         - Remove Inactive Clients
+    - Future Plans
 
 
 ## Assignment 1 - Shell Implementation
@@ -119,7 +120,7 @@ To compile the shell, ensure `chat_server.c`, `chat_client.c`, and `udp.h` are i
 pkill -9 -x chat_client
 pkill -9 -x chat_server
 ```
-To ensure there are no running threads that may cause unpredicatable and dangerous behaviour. 
+To ensure there are no running threads that may cause unpredicatable and dangerous behaviour. It should just be run once each on one of the many terminals.
 Open as many terminals as you want clients (+1 one to behave as the server) and type:
 ```bash
 gcc chat_client.c -o chat_client -lncursesw -pthread
@@ -148,7 +149,7 @@ We made the client-server system compatible with 8 main commands:
 ```bash
 conn$ client_name
 ```
-where client_name can be replaced with whatever name the user wants ( no spaces allowed )
+where client_name can be replaced with whatever name the user wants ( no spaces allowed ) as long as it is not already taken by another client. A check is in place to ensure multiple clients do not try connect to the server through the same server.
 ```bash
 say$ msg
 ```
@@ -168,7 +169,7 @@ where client_name can be replaced with the name of the intended client to the us
 ```bash
 rename$ new_name
 ```
-where new_name can be replaced with whatever name the user wants replace their name with
+where new_name can be replaced with whatever name the user wants replace their name with as long as it is not already taken by another client
 ```bash
 disconn$
 ```
@@ -188,3 +189,6 @@ where the admin ( connected on port 6666 ) can forcefully disconnect a client fr
 
 
 #### 2. Remove Inactive Clients
+The time stamp for each client is logged when they last submitted a request. Every 30 seconds, the time since the last request is calculated and checked to see if it is longer than 5 minutes. If so, a ping is sent to the client to let the user know they have been inactive for an extended period of time in case it was unintentional inactvity. The user can then interact through another request within 30s ( before the next activity check ) or send a **ret-ping$** request that wont output anything but just let the server know the user is still there without having to interact with the other clients if they do not wish to.
+
+### Future plans - if given more time
