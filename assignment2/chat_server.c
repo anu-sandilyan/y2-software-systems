@@ -120,37 +120,64 @@ ClientNode* find_client_node(struct sockaddr_in *sender) {
     return NULL;
 }
 
-void connect_client(int sd, struct sockaddr_in *sender, char *name) {
-    //add connecting client
-    add_client(*sender, name);
-    // print user details to server terminal
-    printf("User '%s' added to active clients: ", name);
-    printf("connected from IP: %s, port: %d\n", head->client_ip, head->client_port);
-
-    // send response only to client who just connected
-    char connect_msg[BUFFER_SIZE];
-    snprintf(connect_msg, BUFFER_SIZE, "Hi %s, you have successfully connected to the chat!", name);
-    // show message history to connecting client
-    send_history_to_client(sd, sender);
-
-    char join_msg[BUFFER_SIZE];
-    snprintf(join_msg, BUFFER_SIZE, "%s has joined the chat.", name);
-    // notify all clients about the new user
-    add_to_history(join_msg);
-
-    pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
-    ClientNode *current = head;
-    while (current != NULL) {
-        if (current->client_port == ntohs(sender->sin_port)) {
-            // Send specific welcome message to the new user
-             udp_socket_write(sd, &current->client_addr, connect_msg, BUFFER_SIZE);
-        } else {
-            // Send "X has joined" to everyone else
-             udp_socket_write(sd, &current->client_addr, join_msg, BUFFER_SIZE);
+bool username_exists (int sd, struct sockaddr_in *sender, char *name) {
+    for (ClientNode *cur = head; cur != NULL; cur = cur->next) {
+        if (strcmp(cur->name, name) == 0) {
+            return true;   // found
         }
-        current = current->next;
     }
-    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+    return false;
+}
+
+void connect_client(int sd, struct sockaddr_in *sender, char *name) {
+    if (find_client_node(sender) != NULL) {
+        udp_socket_write(sd, sender, "Error: Already connected.", 128);
+        return;
+    }
+
+    else if (strchr(name, ' ') != NULL) { // string contains at least one space
+        udp_socket_write(sd, sender, "Error: Username cannot have any spaces inbetween.", 128);
+        return;
+    }
+
+    else {
+        if (!(username_exists (sd, sender, name)))  {
+            //add connecting client
+            add_client(*sender, name);
+            // print user details to server terminal
+            printf("User '%s' added to active clients: ", name);
+            printf("connected from IP: %s, port: %d\n", head->client_ip, head->client_port);
+
+            // send response only to client who just connected
+            char connect_msg[BUFFER_SIZE];
+            snprintf(connect_msg, BUFFER_SIZE, "Hi %s, you have successfully connected to the chat!", name);
+            // show message history to connecting client
+            send_history_to_client(sd, sender);
+
+            char join_msg[BUFFER_SIZE];
+            snprintf(join_msg, BUFFER_SIZE, "%s has joined the chat.", name);
+            // notify all clients about the new user
+            add_to_history(join_msg);
+
+            pthread_rwlock_rdlock(&lock); //CRITICAL SECTION - reading global list (lock)
+            ClientNode *current = head;
+            while (current != NULL) {
+                if (current->client_port == ntohs(sender->sin_port)) {
+                    // Send specific welcome message to the new user
+                    udp_socket_write(sd, &current->client_addr, connect_msg, BUFFER_SIZE);
+                } else {
+                    // Send "X has joined" to everyone else
+                    udp_socket_write(sd, &current->client_addr, join_msg, BUFFER_SIZE);
+                }
+                current = current->next;
+            }
+            pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+        }
+
+        else {
+        udp_socket_write(sd, sender, "Error: Username already taken.", 128);
+        }
+    }
 }
 
 void disconnect_client(int sd, struct sockaddr_in *sender) {
@@ -277,61 +304,67 @@ void kick_client(int sd, struct sockaddr_in *sender, char *target_name) {
 }
 
 void rename_client(int sd, struct sockaddr_in *sender, char *new_name) {
-    int sender_port = ntohs(sender->sin_port);
-    char sender_ip[INET_ADDRSTRLEN];
-    pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
-    inet_ntop(AF_INET, &(sender->sin_addr), sender_ip, INET_ADDRSTRLEN);
+    if (!(username_exists (sd, sender, new_name))) {
+        int sender_port = ntohs(sender->sin_port);
+        char sender_ip[INET_ADDRSTRLEN];
+        pthread_rwlock_wrlock(&lock); //CRITICAL SECTION - writing to global list (lock)
+        inet_ntop(AF_INET, &(sender->sin_addr), sender_ip, INET_ADDRSTRLEN);
 
-    ClientNode *current = head;
+        ClientNode *current = head;
 
-    // find client
-    while (current != NULL) {
-        // match by Port AND IP
-        if (current->client_port == sender_port && strcmp(current->client_ip, sender_ip) == 0) { 
-            char old_name[32];
-            strncpy(old_name, current->name, 31);
-            old_name[31] = '\0';
+        // find client
+        while (current != NULL) {
+            // match by Port AND IP
+            if (current->client_port == sender_port && strcmp(current->client_ip, sender_ip) == 0) { 
+                char old_name[32];
+                strncpy(old_name, current->name, 31);
+                old_name[31] = '\0';
 
-            printf("User '%s' has changed their name to '%s'\n", old_name, new_name);
+                printf("User '%s' has changed their name to '%s'\n", old_name, new_name);
 
-            strncpy(current->name, new_name, 31);
-            current->name[31] = '\0'; // ensure it is a valid string
+                strncpy(current->name, new_name, 31);
+                current->name[31] = '\0'; // ensure it is a valid string
 
-            char global_msg[BUFFER_SIZE];
-            snprintf(global_msg, BUFFER_SIZE, "User %s changed their name to %s.", old_name, new_name);
-            add_to_history(global_msg);
+                char global_msg[BUFFER_SIZE];
+                snprintf(global_msg, BUFFER_SIZE, "User %s changed their name to %s.", old_name, new_name);
+                add_to_history(global_msg);
 
-            ClientNode *update_mute = head;
-            while (update_mute != NULL) {
-                // update name on other clients' mute lists
-                MutedClients *m = update_mute->muted_client;
-                while (m != NULL) {
-                    if (strcmp(m->name, old_name) == 0) {
-                        strncpy(m->name, new_name, 31);
-                        m->name[31] = '\0';
-                        break; 
+                ClientNode *update_mute = head;
+                while (update_mute != NULL) {
+                    // update name on other clients' mute lists
+                    MutedClients *m = update_mute->muted_client;
+                    while (m != NULL) {
+                        if (strcmp(m->name, old_name) == 0) {
+                            strncpy(m->name, new_name, 31);
+                            m->name[31] = '\0';
+                            break; 
+                        }
+                        m = m->next;
                     }
-                    m = m->next;
+                    if (update_mute != current) {
+                        udp_socket_write(sd, &update_mute->client_addr, global_msg, BUFFER_SIZE);
+                    }
+                    update_mute = update_mute->next;
                 }
-                if (update_mute != current) {
-                    udp_socket_write(sd, &update_mute->client_addr, global_msg, BUFFER_SIZE);
-                }
-                update_mute = update_mute->next;
+
+                char new_name_msg[BUFFER_SIZE];
+                snprintf(new_name_msg, BUFFER_SIZE, "You are now known as %s.", current->name);
+                udp_socket_write(sd, sender, new_name_msg, BUFFER_SIZE);
+                pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+                return;
             }
-
-            char new_name_msg[BUFFER_SIZE];
-            snprintf(new_name_msg, BUFFER_SIZE, "You are now known as %s.", current->name);
-            udp_socket_write(sd, sender, new_name_msg, BUFFER_SIZE);
-            pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
-            return;
+            current = current->next;
         }
-        current = current->next;
-    }
 
-    // if user not found
-    pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
-    char error_msg[] = "Error: User name not found.";
-    udp_socket_write(sd, sender, error_msg, sizeof(error_msg));
+        // if user not found
+        pthread_rwlock_unlock(&lock); //END CRITICAL SECTION - unlock
+        char error_msg[] = "Error: User name not found.";
+        udp_socket_write(sd, sender, error_msg, sizeof(error_msg));
+    }
+    
+    else {
+        udp_socket_write(sd, sender, "Error: Username already taken.", 128);
+    }
 }
 
 static bool reciever_is_muted(const ClientNode *client, const char *reciever) { // CHECK: Has the reciever(2) muted the client(1)
@@ -542,6 +575,7 @@ void sayto_client(int sd, struct sockaddr_in *sender, char *nameandmessage ) {
         udp_socket_write(sd, sender, err_msg, BUFFER_SIZE);
     }
 }
+
 void update_activity(struct sockaddr_in *client_address){
     ClientNode* client = find_client_node(client_address);
     if (client == NULL)
@@ -608,6 +642,11 @@ void parse_request(char *client_request, int sd, struct sockaddr_in *client_addr
             update_activity(client_address);
             unmute_client(sd, client_address, message);
         }  
+                
+        else if (strcmp(command, "ret-ping") == 0)
+        {
+            update_activity(client_address);
+        } 
         else 
         {
             update_activity(client_address);
@@ -678,10 +717,7 @@ void *checking_inactivity(void *arg) {
 
 }
 
-
-int main(int argc, char *argv[])
-{
-
+int main(int argc, char *argv[]){
     // This function opens a UDP socket,
     // binding it to all IP interfaces of this machine,
     // and port number SERVER_PORT
