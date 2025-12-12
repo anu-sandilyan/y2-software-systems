@@ -4,9 +4,9 @@
 void construct_shell_prompt(char shell_prompt[])
 {
     //  cwd_buffer: getcwd() requires a size buffer to prevent overflow
-    char cwd_buffer[MAX_PROMPT_LEN - 10];
-    if (getcwd(cwd_buffer, sizeof(cwd_buffer)) != NULL) {
-        snprintf(shell_prompt, MAX_PROMPT_LEN, "%s[s3]$ ", cwd_buffer);
+    char prompt_buffer[MAX_PROMPT_LEN - 10];
+    if (getcwd(prompt_buffer, sizeof(prompt_buffer)) != NULL) {
+        snprintf(shell_prompt, MAX_PROMPT_LEN, "%s[s3]$ ", prompt_buffer);
     } else {
         // default prompt if getcwd fails
         perror("error: getcwd failed");
@@ -22,7 +22,7 @@ void read_command_line(char line[])
     printf("%s", shell_prompt);
 
     ///See man page of fgets(...)
-    if (fgets(line, MAX_LINE, stdin) == NULL)
+    if (fgets(line, MAX_LINE, stdin) == NULL) //get user input
     {
         perror("fgets failed");
         exit(1);
@@ -109,6 +109,12 @@ void exec_pipeline(char *commands[], int *commandsc) {
                 dup2(pd[1], STDOUT_FILENO); //wire write end of pipe to output
                 close(pd[1]); // close child copy of pipe
                 close(pd[0]);
+            }
+
+            if (is_subshell(commands[i])) {
+                // launch_subshell forks internally, so we wait for it
+                launch_subshell(commands[i], "./s3"); 
+                exit(0); // Exit this pipeline child when the subshell finishes
             }
 
             char *args[MAX_ARGS];
@@ -238,6 +244,51 @@ bool is_batch(char line[])
     return false;
 } 
 
+bool is_subshell(char line[]) {
+    char *start = line;
+    while (*start == ' ' || *start == '\t') start++;
+
+    // Check if it starts with '('
+    if (*start != '(') return false;
+
+    // Check if it ends with ')'
+    int len = strlen(line);
+    char *end = line + len - 1;
+    while (end > start && (*end == ' ' || *end == '\t')) end--;
+
+    if (*end == ')') return true;
+    
+    return false;
+}
+
+void launch_subshell(char line[], char *prog_name) {
+    // 1. Strip the parentheses to get the inner command
+    char *start = line;
+    while (*start != '(') start++; // Find first '('
+    start++; // Move past '('
+
+    // Find last ')'
+    char *end = line + strlen(line) - 1;
+    while (*end != ')') end--;
+    *end = '\0'; // Replace ')' with null terminator to cut the string
+
+    // 2. Fork and Execute the shell recursively
+    int rc = fork();
+    if (rc < 0) {
+        perror("fork failed");
+        exit(1);
+    } else if (rc == 0) {
+        // Child Process: run ./s3 -c "command string"
+        char *args[] = {prog_name, "-c", start, NULL};
+        execvp(prog_name, args);
+        
+        perror("subshell execution failed");
+        exit(1);
+    } else {
+        wait(NULL);
+    }
+}
+
 ///Launch related functions
 void child(char *args[], int argsc)
 {
@@ -322,13 +373,11 @@ void launch_program_with_redirection(char *args[], int argsc)
             fprintf(stderr, "fork failed :(\n");
             exit(1);
         } else if (rc == 0){
-            printf("child initiated: pid = %d\n", getpid());
             exec_redirect(args, argsc);
             child(args, argsc);
         } else {
             int wstatus;
             waitpid(rc, &wstatus, 0);
-            printf("returning to parent function (pid =  %d): \n", getpid());
         }
 }
 
@@ -340,12 +389,10 @@ void launch_program(char *args[], int argsc)
         fprintf(stderr, "fork failed :(\n");
         exit(1);
     } else if (rc == 0){
-        printf("child initiated: pid = %d\n", getpid());
         child(args, argsc);
     } else {
         int wstatus;
         waitpid(rc, &wstatus, 0);
-        printf("returning to parent function (pid =  %d): \n", getpid());
     }
     ///fork() a child process.
     ///In the child part of the code,
