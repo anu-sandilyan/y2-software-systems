@@ -2,16 +2,19 @@
 ##### By Anu Sandilyan and Divyaa Nagasundhar
 
 ## Table of Contents
-- #### [Assignment 1 - Shell Implementation](#Assignment-1---Shell-Implementation)
-    - [Compilation](#compilation)
-    - [Features Implemented](#features-implemented)
-    - [Proposed Extensions (PEs)](#proposed-extensions-pes)
-    - [Usage Examples](#usage-examples)
-    - [Implementation Details](#implementation-details)
-- #### [Assignment 2 - Multithreaded Chat Application](#Assignment-2---Multithreaded-Chat-Application)
-    - [Compilation](#compilation)
-    - [Features Implemented](#features-implemented)
-    - [Proposed Extensions (PEs)](#proposed-extensions-pes)
+- #### Assignment 1 - Shell Implementation
+    - Compilation
+    - Features Implemented
+    - Proposed Extensions (PEs)
+    - Usage Examples
+    - Implementation Details
+- #### Assignment 2 - Multithreaded Chat Application
+    - Compilation
+    - Implemented Requests
+    - User interface
+    - Proposed Extensions (PEs)
+        - History at Connection
+        - Remove Inactive Clients
 
 
 ## Assignment 1 - Shell Implementation
@@ -105,3 +108,83 @@ Logic: The parser identifies the outer parentheses, spawns a child shell, which 
 
 ## Assignment 2 - Multithreaded Chat Application
 
+The **chat_server.c** program implements a multi client chat server, that manages all clients and processes incoming commands. The **chat_client.c** program recieves and sends the commands to the server, and communicates with the user. Both programs communicate with each other through the **udp.h** file thats acts as a wrapper functions to open a UDP socket 
+
+
+### Compilation
+
+To compile the shell, ensure `chat_server.c`, `chat_client.c`, and `udp.h` are in the same directory. Open the Linux terminal and navigate to the directory with the program files and type:
+
+```bash
+pkill -9 -x chat_client
+pkill -9 -x chat_server
+```
+To ensure there are no running threads that may cause unpredicatable and dangerous behaviour. 
+Open as many terminals as you want clients (+1 one to behave as the server) and type:
+```bash
+gcc chat_client.c -o chat_client -lncursesw -pthread
+```
+to compile the chat_client program and connect it to the lncurses and pthread library, 
+and then run:
+```bash
+gcc chat_server.c -o chat_server
+```
+to compile the chat_client program.
+Then, type:
+```bash
+./chat_server &
+```
+to run the chat server program.
+ And then on only the remaining terminals connecting as clients, type:
+```bash
+./chat_client
+```
+to begin running the client-server program!
+
+### Implemented Requests
+
+We made the client-server system compatible with 8 main commands:
+
+```bash
+conn$ client_name
+```
+where client_name can be replaced with whatever name the user wants ( no spaces allowed )
+```bash
+say$ msg
+```
+where msg can be replaced with whatever message the user wants
+```bash
+sayto$ recipient_name msg
+```
+where recipient_name can be replaced with the name of the intended client to the user wants to privately message and msg can be replaced with whatever message the user wants to send
+```bash
+mute$ client_name
+```
+where client_name can be replaced with the name of the intended client to the user wants to mute which will then prevent them for seeing any messages sent from that client. Only works if that client is already unmuted.
+```bash
+unmute$ client_name
+```
+where client_name can be replaced with the name of the intended client to the user wants to unmute which will then allow them to see any messages sent from that client again. Only works if that client is already muted.
+```bash
+rename$ new_name
+```
+where new_name can be replaced with whatever name the user wants replace their name with
+```bash
+disconn$
+```
+where the user can disconnect themselves from the serve
+```bash
+kick$ client_name
+```
+where the admin ( connected on port 6666 ) can forcefully disconnect a client from the server
+
+
+### User interface
+
+
+### Proposed Extensions (PEs)
+
+#### 1. History at Connection
+
+
+#### 2. Remove Inactive Clients
