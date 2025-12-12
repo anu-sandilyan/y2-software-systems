@@ -1,5 +1,5 @@
 # Y2 Software Systems - Assignment 1 and 2
-##### By Anu Sandilyan and Divyaa Nagasundhar
+##### By Anu Sandilyan (02603762) and Divyaa Nagasundhar (02622971)
 
 ## Table of Contents
 - #### Assignment 1 - Shell Implementation
