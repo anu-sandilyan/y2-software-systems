@@ -1,4 +1,4 @@
-# Y2 Software Systems Assignments
+# Y2 Software Systems - Assignment 1 and 2
 ##### By Anu Sandilyan and Divyaa Nagasundhar
 
 ## Table of Contents
@@ -10,7 +10,8 @@
     - Implementation Details
 - #### Assignment 2 - Multithreaded Chat Application
     - Compilation
-    - Implemented Requests
+    - Features Implemented
+    - Synchronisation
     - User interface
     - Proposed Extensions (PEs)
         - History at Connection
@@ -105,12 +106,9 @@ Logic: The parser identifies the outer parentheses, spawns a child shell, which 
 * Subshell Recursion: When a subshell (...) is detected, the program calls fork() and the child executes execvp("./s3", "-c", "inner_command"). This re-uses the shell's own parsing logic for the inner content.
 
 
-
-
 ## Assignment 2 - Multithreaded Chat Application
 
-The **chat_server.c** program implements a multi client chat server, that manages all clients and processes incoming commands. The **chat_client.c** program recieves and sends the commands to the server, and communicates with the user. Both programs communicate with each other through the **udp.h** file thats acts as a wrapper functions to open a UDP socket 
-
+The **chat_server.c** program implements a multithreaded client-chat server, that manages all clients and processes incoming client requests. The **chat_client.c** program recieves and sends the commands to the server, and communicates with the user. The client and the server communicate with each other through the **udp.h** file thats acts as a wrapper functions to open a UDP socket.
 
 ### Compilation
 
@@ -120,65 +118,87 @@ To compile the shell, ensure `chat_server.c`, `chat_client.c`, and `udp.h` are i
 pkill -9 -x chat_client
 pkill -9 -x chat_server
 ```
-To ensure there are no running threads that may cause unpredicatable and dangerous behaviour. It should just be run once each on one of the many terminals.
-Open as many terminals as you want clients (+1 one to behave as the server) and type:
+To ensure there are no running background processes that may cause unpredicatable and dangerous behaviour. To compile the client program, type:
 ```bash
 gcc chat_client.c -o chat_client -lncursesw -pthread
 ```
-to compile the chat_client program and connect it to the lncurses and pthread library, 
-and then run:
+to compile the chat server, run the command:
 ```bash
-gcc chat_server.c -o chat_server
+gcc chat_server.c -o chat_server -pthread
 ```
-to compile the chat_client program.
-Then, type:
+To start running the server, type:
 ```bash
 ./chat_server &
 ```
-to run the chat server program.
- And then on only the remaining terminals connecting as clients, type:
+The '&' ensures it continuously runs as a background process. This is now the server terminal, where server-side messages such as client connection/disconnection, kicking and renaming updates will print.
+
+ To connect a client, open a new terminal window and cd to the directory containing the client program. Then type:
 ```bash
+./server &
 ./chat_client
 ```
-to begin running the client-server program!
+to begin running the client-server chat program! Repeat this process in a new terminal window as many times as desired to connect more clients to the chat. 
 
-### Implemented Requests
+### Features Implemented
 
-We made the client-server system compatible with 8 main commands:
+We initially made the client-server system compatible with these 8 core functions:
+1. Connect (conn$): Allows a new client to connect to the server, and prints a global message to the server and all clients.
 
 ```bash
 conn$ client_name
 ```
-where client_name can be replaced with whatever name the user wants ( no spaces allowed ) as long as it is not already taken by another client. A check is in place to ensure multiple clients do not try connect to the server through the same server.
+'client_name' can be replaced with whatever name the user wants (no spaces are allowed) as long as it is not already taken by another client. The program also ensures that multiple clients cannot connect to the server with the same name. This was implemented by creating a global linked list of clients, and adding a new ClientNode for each new client that connects. This enabled us to easily traverse the list, fetch client attributes, and add/remove clients, forming the basis for writing more complex functions.
+
+2. Global Messaging (say$): A client can send a global message, which is seen by every client in the server (unless another client has muted them).
 ```bash
 say$ msg
 ```
-where msg can be replaced with whatever message the user wants
+'msg' is replaced with whatever message the client wants to send.
+
+3. Private Messaging (sayto$): A client can send a private message to another user, which can only be seen by the sender and the recipient.
+
 ```bash
 sayto$ recipient_name msg
 ```
-where recipient_name can be replaced with the name of the intended client to the user wants to privately message and msg can be replaced with whatever message the user wants to send
+'recipient_name' can be replaced with the name of the recipient that the sender wants to privately message, and 'msg' can be replaced with whatever message the user wants to send.
+
+4. Muting (mute$): A client can stop seeing all messages (both global and private) from another user after muting them.
 ```bash
 mute$ client_name
 ```
-where client_name can be replaced with the name of the intended client to the user wants to mute which will then prevent them for seeing any messages sent from that client. Only works if that client is already unmuted.
+'client_name' can be replaced with the name of the client that the sender wants to mute, which will then prevent them from seeing any of that client's messages. This required the creation of another linked list, belonging to each client, of their own muted clients. During testing we encountered a bug that if a client renamed themeslves, they would no longer be muted to other clients - we fixed this by also updating the 'muted clients' list inside the rename function. We also added a check to alert the user if the client they were trying to mute was already muted. Only the sender recieves a notification.
+
+5. Unmute(unmute$): A client can see messages again from a previously muted user.
 ```bash
 unmute$ client_name
 ```
-where client_name can be replaced with the name of the intended client to the user wants to unmute which will then allow them to see any messages sent from that client again. Only works if that client is already muted.
+'client_name' can be replaced with the name of the client that the user wants to unmute, which allows them to see the previously muted user's messages again. This works similarly to the mute function, but removes the recipient from the seder's 'muted clients' list. This function also alerts the user if the client they were trying to unmute was already unmuted.  Only the sender recieves a notification.
+
+6. Rename (rename$): A user can change their own name globally.
 ```bash
 rename$ new_name
 ```
-where new_name can be replaced with whatever name the user wants replace their name with as long as it is not already taken by another client
+'new_name' can be replaced with the user's new name, as long as it is not taken by another client. This prints a global message to the server and all clients to alert that they have renamed themselves. 
+
+7. Disconnect (disconn$): Allows a connected client to disconnect from the server, and prints a global message to the server and all clients.
 ```bash
 disconn$
 ```
-where the user can disconnect themselves from the serve
+No client name is needed, as the client can only use this command on themselves. This prints a goodbye message to the disconnecting client, and notifies the server and all other clients that they have left. It removes them from the global linked list of clients.
+
+8. Kick (kick$): Allows an admin (client connected from port 6666) to kick any user from the server.
 ```bash
 kick$ client_name
 ```
-where the admin ( connected on port 6666 ) can forcefully disconnect a client from the server
+For the scope of this assignment, an 'admin' connection was defined as a user connecting from port 6666. Whilst connecting as a 'normal' client automatically connects you to a random free port, the command:
+```bash
+./client [port_number]
+```
+Allows the user to connect from any chosen port. If the client connects from port 6666, they are designated as an admin and can kick other users. If a non-admin types the kick$ command, they will see an error message and the server is notified of the unauthorised kick attempt. If a admin successfully kicks another user, the recipient sees a removal message, they are disconnected from the chat, and the server and other clients recieve a notification.
 
+Whilst these functions provided much of the core functionality for our program, we wanted to enhance the user experience by implementing more functionality, as outlined in the proposed extensions. We also chose
+
+### Synchronisation
 
 ### User interface
 
@@ -186,9 +206,13 @@ where the admin ( connected on port 6666 ) can forcefully disconnect a client fr
 ### Proposed Extensions (PEs)
 
 #### 1. History at Connection
-
+This feature enables a newly connected client to see previous messages and global notifications (such as connections or renames), up to a maximum of 15 messages. This involved the implementation of a circular buffer array which can hold 15 strings, and overwrites itself using modular arithmetic logic when its length is exceeded, This 'wrap-around' functionality allows the most recent 15 messages to be stored, allowing clients to keep up-to-date with the conversation even if they have just connected.
 
 #### 2. Remove Inactive Clients
 The time stamp for each client is logged when they last submitted a request. Every 30 seconds, the time since the last request is calculated and checked to see if it is longer than 5 minutes. If so, a ping is sent to the client to let the user know they have been inactive for an extended period of time in case it was unintentional inactvity. The user can then interact through another request within 30s ( before the next activity check ) or send a **ret-ping$** request that wont output anything but just let the server know the user is still there without having to interact with the other clients if they do not wish to.
+
+### Error Detection
+During our thorough testing and debugging of each function, we added error detection for almost all incorrect or invalid commands that a client can type:
+* Invalid Command Format: If the client does not format their message as '
 
 ### Future plans - if given more time
