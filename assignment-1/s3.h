@@ -43,6 +43,7 @@ void exec_redirect(char *args[], int argsc);
 void split_batch(char line[], char *sub_lines[], int *sub_linesc);
 void split_pipeline(char line[], char *commands[], int *commandsc);
 void exec_pipeline(char *commands[], int *commandsc);
+void launch_subshell(char line[], char *prog_name);
 
 //flags for exit, cd and redirect
 bool is_pipeline(char line[]);
@@ -50,6 +51,7 @@ bool is_batch(char line[]);
 bool is_exit(char *args[]);
 bool is_cd(char *args[]);
 bool is_redirect(char *args[], int argsc);
+bool is_subshell(char line[]);
 
 void catch_fd_errors(int fd);
 

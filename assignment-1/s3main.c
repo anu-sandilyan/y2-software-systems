@@ -1,17 +1,13 @@
 #include "s3.h"
 
-//new function to process each line, or "sub-line" if user inputs a batched command with ";"
-static void process_input(char line[]){
+// Process a single command line (handles pipelines, subshells, and basic commands)
+static void process_input(char line[], char* prog_name) {
 
-    ///Stores pointers to command arguments.
-    ///The first element of the array is the command name.
     char *args[MAX_ARGS];
-
-    ///Stores the number of arguments
     int argsc;
 
+    // 1. Check for Pipeline
     if(is_pipeline(line)){
-        //split pipeline into commands
         char *commands[MAX_ARGS];
         int commandsc = 0;
         split_pipeline(line, commands, &commandsc);
@@ -19,19 +15,21 @@ static void process_input(char line[]){
             return;
         } 
         else {
-        exec_pipeline(commands, &commandsc);
+            exec_pipeline(commands, &commandsc);
         }
     }   
-    //parse normally if no pipeline is found
+    // 2. Check for Subshell (MUST be separate from pipeline check)
+    else if (is_subshell(line)) {
+        launch_subshell(line, prog_name);
+    }   
+    // 3. Normal Command
     else 
     {
         parse_command(line, args, &argsc);
         //empty input handling
-        if (argsc == 0) 
-        { 
-            return;
-        }  
-        else if (is_exit(args)) 
+        if (argsc == 0) return;
+        
+        if (is_exit(args)) 
         { 
             printf("exiting shell...\n");
             exit(0);
@@ -41,7 +39,7 @@ static void process_input(char line[]){
         } 
         else if(is_redirect(args, argsc)) 
         { 
-        launch_program_with_redirection(args, argsc);
+            launch_program_with_redirection(args, argsc);
         }
         else { //Basic command 
             launch_program(args, argsc);
@@ -51,16 +49,30 @@ static void process_input(char line[]){
 
 int main(int argc, char *argv[]){
 
-    ///Stores the command line input
     char line[MAX_LINE];
 
-    ///Stores pointers to command arguments.
-    ///The first element of the array is the command name.
-    char *args[MAX_ARGS];
+    // --- MODE 1: Non-Interactive (Subshell Mode) ---
+    // Usage: ./s3 -c "command string"
+    if (argc == 3 && strcmp(argv[1], "-c") == 0) {
+        strcpy(line, argv[2]);
+        
+        // Handle batching (;) inside the -c command string
+        // Note: No while(1) loop here! Run once and exit.
+        if(is_batch(line)){
+            char *sub_lines[MAX_ARGS];
+            int sub_linesc = 0;
+            split_batch(line, sub_lines, &sub_linesc);
+            for(int i = 0; i < sub_linesc; i++){
+                process_input(sub_lines[i], argv[0]);
+            }
+        } else {
+            process_input(line, argv[0]);
+        }
+        return 0; // EXIT IMMEDIATELY after running the command
+    }
 
-    ///Stores the number of arguments
-    int argsc;
-
+    // --- MODE 2: Interactive Mode (Normal Shell) ---
+    // Usage: ./s3
     while (1) {
         read_command_line(line);
         if(is_batch(line)){
@@ -68,12 +80,12 @@ int main(int argc, char *argv[]){
             int sub_linesc = 0;
             split_batch(line, sub_lines, &sub_linesc);
             for(int i = 0; i < sub_linesc; i++){
-                process_input(sub_lines[i]);
+                process_input(sub_lines[i], argv[0]);
             }
         } else {
-            process_input(line);
+            process_input(line, argv[0]);
         }
-       
     }
+    
     return 0;
 }
