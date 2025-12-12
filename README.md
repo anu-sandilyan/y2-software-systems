@@ -196,9 +196,13 @@ kick$ client_name
 ```
 * Allows the user to connect from any chosen port. If the client connects from port 6666, they are designated as an admin and can kick other users. If a non-admin types the kick$ command, they will see an error message and the server is notified of the unauthorised kick attempt. If a admin successfully kicks another user, the recipient sees a removal message, they are disconnected from the chat, and the server and other clients recieve a notification.
 
-Whilst these functions provided much of the core functionality for our program, we wanted to enhance the user experience by implementing more functionality, as outlined in the proposed extensions. We also chose this point to add support for multithreading, which involved integrating locks with the pthread library - this is essential for a multi-client server, as many clients may be trying to perform read and write operations simultaneously, which could lead to data corruption and very slow server performance.
+Whilst these functions provided much of the core functionality for our program, we wanted to enhance the user experience by implementing more functionality, as outlined in the proposed extensions.
 
 ### Synchronisation
+
+We also chose this point to add support for multithreading, which involved integrating locks with the pthread library - this is essential for a multi-client server, as many clients may be trying to perform read and write operations simultaneously, which could lead to data corruption and very slow server performance. We decided that the most efficient solution would be to add pthread reader-writer locks within every function, adding a read or write lock depending on whether the function edits the global client list. This lock allows only one writer to access the list if no other thread is accessing it, at which point no readers or writers can access it until the lock is released. This was used in the connect, disconnect, kick, mute and unmute functions.
+
+Readers can access the list even if multiple other readers have the lock, but not if a writer is modifying it - no writers are allowed to edit the list while it is being read. This was used for our other functions, such as say and sayto. This prevents data corruption during client request handling, and allows our program to efficiently operate on multiple threads.
 
 ### User interface
 
