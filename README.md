@@ -172,7 +172,7 @@ mute$ client_name
 ```bash
 unmute$ client_name
 ```
-* 'client_name' can be replaced with the name of the client that the user wants to unmute, which allows them to see the previously muted user's messages again. This works similarly to the mute function, but removes the recipient from the seder's 'muted clients' list. This function also alerts the user if the client they were trying to unmute was already unmuted.  Only the sender recieves a notification.
+* 'client_name' can be replaced with the name of the client that the user wants to unmute, which allows them to see the previously muted user's messages again. This works similarly to the mute function, but removes the recipient from the sender's 'muted clients' list. This function also alerts the user if the client they were trying to unmute was already unmuted.  Only the sender recieves a notification.
 
 6. Rename (rename$): A user can change their own name globally.
 ```bash
@@ -233,6 +233,9 @@ During our thorough testing and debugging of each function, we added error detec
 * Unauthorised Kick Attempt: If a non-admin user (connected from a port other than the 6666 admin port), tries to kick another user.
 * User not found: If a client attempts to mute, unmute, kick or privately message a client that does not exist in the global list.
 * Thread Create Failed: Should not ever print, but is in place in case thread creation fails.
+* Invalid Username: If a client tries to connect with a username that has a space in it ( this would break other requests that operate by splitting the request at the specified spaces
+* Already taken username: If a client tries to connect with or change their name to one that already exists
+* Already connected: Trying to connect more than once to server from the same terminal
 
 ### Future plans
 
